@@ -10,33 +10,73 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as HorariosRouteImport } from './routes/horarios'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as MaterialesRouteImport } from './routes/materiales'
+import { Route as PerfilRouteImport } from './routes/perfil'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const HorariosRoute = HorariosRouteImport.update({
+  id: '/horarios',
+  path: '/horarios',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MaterialesRoute = MaterialesRouteImport.update({
+  id: '/materiales',
+  path: '/materiales',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PerfilRoute = PerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/horarios': typeof HorariosRoute
+  '/login': typeof LoginRoute
+  '/materiales': typeof MaterialesRoute
+  '/perfil': typeof PerfilRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/horarios': typeof HorariosRoute
+  '/login': typeof LoginRoute
+  '/materiales': typeof MaterialesRoute
+  '/perfil': typeof PerfilRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/horarios': typeof HorariosRoute
+  '/login': typeof LoginRoute
+  '/materiales': typeof MaterialesRoute
+  '/perfil': typeof PerfilRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths: '/' | '/horarios' | '/login' | '/materiales' | '/perfil'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/horarios' | '/login' | '/materiales' | '/perfil'
+  id: '__root__' | '/' | '/horarios' | '/login' | '/materiales' | '/perfil'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  HorariosRoute: typeof HorariosRoute
+  LoginRoute: typeof LoginRoute
+  MaterialesRoute: typeof MaterialesRoute
+  PerfilRoute: typeof PerfilRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +88,43 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/horarios': {
+      id: '/horarios'
+      path: '/horarios'
+      fullPath: '/horarios'
+      preLoaderRoute: typeof HorariosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/materiales': {
+      id: '/materiales'
+      path: '/materiales'
+      fullPath: '/materiales'
+      preLoaderRoute: typeof MaterialesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/perfil': {
+      id: '/perfil'
+      path: '/perfil'
+      fullPath: '/perfil'
+      preLoaderRoute: typeof PerfilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  HorariosRoute: HorariosRoute,
+  LoginRoute: LoginRoute,
+  MaterialesRoute: MaterialesRoute,
+  PerfilRoute: PerfilRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
