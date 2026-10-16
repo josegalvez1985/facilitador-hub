@@ -45,5 +45,8 @@ export function semanaDe(d: Date = hoy()): DiaSemana[] {
   });
 }
 
+/** Número de día del calendario local (cambia a medianoche): sirve para rotar contenido diario. */
+export const numeroDeDia = (d: Date = hoy()) => Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000);
+
 /** Lunes a viernes. */
 export const esDiaHabil = (d: Date) => d.getDay() >= 1 && d.getDay() <= 5;

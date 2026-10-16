@@ -13,6 +13,9 @@ Esa es la URL de `EXPO_PUBLIC_API_URL` en `.env`.
 | [ords_modulo_ethos_export.sql](ords_modulo_ethos_export.sql) | Exportación del módulo `ethos` **tal como está publicado**: es la referencia de verdad. Está **incompleta**: se corta en `menu-paginas`. Reemplazala por la exportación completa (ORDS → REST → Export). |
 | [auth_facilitadores.sql](auth_facilitadores.sql) | Alternativa **no usada y no publicada**: el script de autenticación renombrado a `FACILITADORES_TOKENS` / `PKG_AUTH_FACILITADORES` / módulo `facilitadores`. Se descartó porque sus tokens no sirven para los endpoints de negocio de `ethos`, que validan contra `ETHOS_TOKENS`. **No correrlo** salvo que se migren también esos endpoints. |
 | [facilitador_app_ethos.sql](facilitador_app_ethos.sql) | **Para correr una vez en APEX.** Crea el paquete `PKG_FACILITADOR_APP_ETHOS` y publica en `ethos` los endpoints `GET mi-facilitador` y `GET mis-evaluaciones`. No redefine el módulo ni toca tablas. |
+| [historial_app_ethos.sql](historial_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_HISTORIAL_APP_ETHOS` (páginas 7 y 8) y publica `historial-intervenciones` y `historial-intervenciones/:id` (GET y PUT). No pisa rutas existentes. |
+| [intervenciones_realizadas_app_ethos.sql](intervenciones_realizadas_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_REALIZADAS_APP_ETHOS` (páginas 4, 5 y 6) y publica `intervenciones-realizadas/*`. No pisa rutas existentes. |
+| [materiales_app_ethos.sql](materiales_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_MATERIALES_APP_ETHOS` (Mis materiales) y publica `GET mis-materiales`. No pisa rutas existentes. |
 | [agenda_app_ethos.sql](agenda_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_AGENDA_APP_ETHOS` (Mis horarios, página 3) y publica `GET mi-agenda`. No pisa rutas existentes. |
 | [intervenciones_app_ethos.sql](intervenciones_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_INTERVENCIONES_APP_ETHOS` (Marcar, página 2) y publica `mis-intervenciones/*`. No pisa rutas existentes: si alguna ya existe y no es de este paquete, se detiene sin tocar nada. |
 
@@ -35,6 +38,49 @@ Página 3 "Agenda" de APEX. `GET mi-agenda` corre el mismo SELECT del reporte (`
 
 Responde `{ success, es_facilitador, data: [ { id_institucion, nombre_institucion, turno, turno_descripcion, grado, lunes … viernes, seccion, nombre_profesor, id_enfasis, enfasis, id_materia, manual, estado, id_postulacion, anio, departamento, ciudad } ] }`. Los días vienen como en la vista: `"08:20, 09:00"`, o `", "` si ese día no hay clase. `turno_descripcion` sigue la LOV de la página: 1 Mañana, 2 Tarde, 3 Noche.
 
+Por clase también devuelve:
+- `indice_siguiente` / `nro_indice_siguiente`: el **siguiente al último desarrollado**, es decir, el `NRO_INDICE` inmediato mayor al más alto con `SI_NO = 'Si'` en esa postulación, dentro de su manual. Si no hay ninguno desarrollado, es el primero; si ya está todo desarrollado, viene `null` (manual completado).
+- `indices_desarrollados` e `indices_total`.
+
+## Historial de intervenciones (`PKG_HISTORIAL_APP_ETHOS`)
+
+Páginas 7 "Historial de Intervenciones" y 8 "Observación". Script: [historial_app_ethos.sql](historial_app_ethos.sql), **para correr una vez en APEX**; no pisa rutas existentes.
+
+| Método | Ruta | Página | Envía / responde |
+|---|---|---|---|
+| GET | `historial-intervenciones` | 7 | `{ success, es_facilitador, data: [ { id_intervencion, fecha_hora, fecha, hora, manual, id_indice, indice, observacion, si_no, motivo_desarrollo, id_institucion, nombre, turno, turno_descripcion, grado, id_enfasis, descripcion } ] }`. Mismo SELECT de la página (`V_HISTORIAL_INTERVENCIONES`, año lectivo, `ID_INTERVENCION DESC`); `grado` = `GRADO||' '||SECCION`. |
+| GET | `historial-intervenciones/:id` | 8 (al abrir) | `{ success, data: { id_intervencion, manual, id_indice, si_no, motivo_desarrollo, observacion, indices:[{id_indice,titulo}], motivos:[…] } }`. Índices: LOV de `P8_ID_INDICE` (`nlssort … binary_ai` por manual). 404 si no es tuya o no es del año lectivo. |
+| PUT | `historial-intervenciones/:id` | 8 (Aplicar Cambios) | Envía `{ id_indice, si_no, motivo_desarrollo, observacion }`. 200 `{ id_intervencion }` · 400 `{ message, campo }` · 404. |
+
+- Validaciones del PUT: índice y Sí/No obligatorios; cada valor en su LOV; observación hasta 1000 (con trim); `OBS`: con "No" + "Otros" la observación es obligatoria. Los triggers de `INTERVENCIONES` corren como con APEX y sus errores llegan como 400.
+- El motivo se guarda tal como llega aunque la respuesta sea "Si" (APEX solo lo oculta).
+- Las facetas Mes y Fecha y el buscador se aplican en la app sobre las filas, usando `fecha_hora` (no depende del idioma de `TO_CHAR(…,'Month')`).
+
+## Intervenciones realizadas (`PKG_REALIZADAS_APP_ETHOS`)
+
+Páginas 4 "Intervenciones", 5 "Días" y 6 "Manuales" de APEX. Script: [intervenciones_realizadas_app_ethos.sql](intervenciones_realizadas_app_ethos.sql), **para correr una vez en APEX**; no pisa rutas existentes. Cada GET corre la consulta de su página con el `ID_FACILITADOR` sacado del token.
+
+| Método | Ruta | Página | Responde |
+|---|---|---|---|
+| GET | `intervenciones-realizadas/instituciones` | 4 | `{ success, es_facilitador, data: [ { id_institucion, nombre_institucion, marcaciones, desarrolladas } ] }` |
+| GET | `intervenciones-realizadas/clases?id_institucion=` | 5 | `{ success, es_facilitador, data: { filas: [ { id_postulacion, turno, turno_descripcion, grado, seccion, id_enfasis, enfasis, lunes … viernes } ], resumen: [ { turno, grado, seccion, marcaciones, desarrolladas } ] } }` |
+| GET | `intervenciones-realizadas/historial?id_institucion=&turno=&grado=&seccion=` | 6 | `{ success, es_facilitador, data: [ { id_intervencion, fecha_hora, manual, id_indice, indice, observacion, desarrollo } ] }` |
+
+- Las LOVs de las páginas se resuelven en el servidor: énfasis con `ENFASIS.DESCRIPCION`, índice con `INDICES_MANUALES.TITULO`, turno 1 Mañana / 2 Tarde / 3 Noche.
+- `filas` son las de la página 5 tal cual (una por día marcado, con `grado||' '||seccion` en la columna del día); la app las agrupa por turno, grado y `NVL(seccion,'A')`, la misma clave con la que filtra la página 6. `resumen` trae los contadores con esa clave.
+- Agregados de la app, que no cambian las filas: los contadores (`marcaciones`, y `desarrolladas` con `SI_NO = 'Si'`) y el orden de la página 5 por turno, grado y sección.
+
+## Mis materiales (`PKG_MATERIALES_APP_ETHOS`)
+
+`GET mis-materiales`: por cada postulación del facilitador en el año lectivo actual (de `V_AGENDA`, en cualquier estado, incluidas las `Finalizado`), su manual con **todos** los índices de `INDICES_MANUALES`:
+
+```
+{ success, es_facilitador, data: [ { id_postulacion, institucion, grado, seccion, turno, turno_descripcion, manual, estado,
+  indices: [ { id_indice, nro_indice, titulo, desarrollado, fecha_desarrollo } ] } ] }
+```
+
+Un índice está desarrollado si tiene alguna intervención con `SI_NO = 'Si'` en esa postulación; `fecha_desarrollo` es la última. El manual se compara con el mismo `TRANSLATE(UPPER(...))` de la página 2.
+
 ## Marcar: intervenciones (`PKG_INTERVENCIONES_APP_ETHOS`)
 
 Corresponde a la página 2 "Intervención" de APEX. Cada GET corre **el mismo select** del ítem APEX, y `:P2_ID_FACILITADOR` / `:APP_USER` salen del token.
@@ -45,7 +91,8 @@ Corresponde a la página 2 "Intervención" de APEX. Cada GET corre **el mismo se
 | GET | `mis-intervenciones/horarios?id_institucion=` | LOV de `P2_ID_POSTULACION` | `[ { id_postulacion, horario } ]` |
 | GET | `mis-intervenciones/clase?id_institucion=&id_postulacion=` | LOVs de `P2_GRADO`, `P2_SECCION`, `P2_TURNO`, `P2_ID_ENFASIS`, `P2_MANUAL` | `{ grados, secciones, turnos:[{turno,descripcion}], enfasis:[{id_enfasis,descripcion}], manuales }` |
 | GET | `mis-intervenciones/indices?id_postulacion=&manual=&grado=&turno=` | LOV y default de `P2_ID_INDICE` | `{ indices:[{id_indice,titulo}], indice_por_defecto }` |
-| GET | `mis-intervenciones/resumen` | KPI "Marcaciones del mes" de Inicio | `{ es_facilitador, del_mes, desarrolladas_del_mes, mes }` |
+| GET | `mis-intervenciones/resumen` | KPIs de Inicio | `{ es_facilitador, del_mes, desarrolladas_del_mes, mes, instituciones, indices_desarrollados, manuales_desarrollados }`. Instituciones: distintas en `POSTULACIONES` del año lectivo. Índices: desarrollados hasta la fecha (sin repetir en la misma postulación). Manuales: postulaciones `Finalizado`. |
+| GET | `mis-intervenciones/recientes?limite=5` | "Actividad reciente" de Inicio | `[ { id_intervencion, fecha_hora, si_no, motivo_desarrollo, manual, indice, institucion, grado, seccion } ]` |
 | POST | `mis-intervenciones` | Botón Guardar (validaciones + INSERT) | 200 `{ id_intervencion }` · 400 `{ message, campo }` · 403 si no es facilitador |
 
 Validaciones del POST:

@@ -2,13 +2,14 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Modal as RNModal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePathname, useRouter, type Href } from 'expo-router';
-import { Bell, BookOpen, CalendarDays, ChevronRight, CircleHelp, ClipboardCheck, LayoutGrid, LogOut, MapPin, Menu, Plus, UserRound, X, type LucideIcon } from 'lucide-react-native';
+import { Bell, BookOpen, CalendarDays, ChevronRight, CircleHelp, ClipboardCheck, History, LayoutGrid, ListChecks, LogOut, MapPin, Menu, Plus, UserRound, X, type LucideIcon } from 'lucide-react-native';
 
 import { useSession } from './auth/session';
 import { demoUser, iniciales } from './data';
 import { fechaLarga } from './fechas';
 import { MarkModal } from './mark-modal';
 import { useApp } from './provider';
+import { PanelProximaClase, useProximaClase } from './proxima-clase';
 import { breakpoints, radius } from './theme';
 import { makeStyles, useTheme } from './theme-provider';
 import { Avatar, Brand, Button, Dot, Modal, ModalActions, ModalText, Notice, Text } from './ui';
@@ -18,7 +19,9 @@ type NavItem = { href: Href; path: string; label: string; short: string; icon: L
 export const nav: NavItem[] = [
   { href: '/', path: '/', label: 'Inicio', short: 'Inicio', icon: LayoutGrid, title: 'Inicio' },
   { href: '/marcar', path: '/marcar', label: 'Registrar intervención', short: 'Marcar', icon: MapPin, title: 'Registrar intervención' },
-  { href: '/horarios', path: '/horarios', label: 'Mis horarios', short: 'Horarios', icon: CalendarDays, title: 'Mis horarios' },
+  { href: '/intervenciones', path: '/intervenciones', label: 'Intervenciones realizadas', short: 'Realizadas', icon: History, title: 'Intervenciones realizadas' },
+  { href: '/historial', path: '/historial', label: 'Historial de intervenciones', short: 'Historial', icon: ListChecks, title: 'Historial de intervenciones' },
+  { href: '/horarios', path: '/horarios', label: 'Mi agenda', short: 'Agenda', icon: CalendarDays, title: 'Mi agenda' },
   { href: '/materiales', path: '/materiales', label: 'Mis materiales', short: 'Materiales', icon: BookOpen, title: 'Mis materiales' },
   { href: '/evaluaciones', path: '/evaluaciones', label: 'Evaluaciones', short: 'Evaluaciones', icon: ClipboardCheck, title: 'Evaluaciones' },
   { href: '/perfil', path: '/perfil', label: 'Mi perfil', short: 'Perfil', icon: UserRound, title: 'Mi perfil' },
@@ -51,6 +54,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (Platform.OS === 'web') document.title = `${title} · Facilitadores`;
   }, [title]);
+
+  // Campana: el punto marca una próxima clase que todavía no se vio; al abrir el panel queda vista
+  // hasta que la próxima clase cambie (por la hora o porque cambió la agenda).
+  const proxima = useProximaClase();
+  const claveNotificacion = proxima.tipo === 'listo' ? (proxima.proxima?.clave ?? null) : null;
+  const [vista, setVista] = useState<string | null>(null);
+  const hayNueva = claveNotificacion !== null && claveNotificacion !== vista;
+  const abrirNotificaciones = () => {
+    if (!notifications && claveNotificacion) setVista(claveNotificacion);
+    setNotifications(!notifications);
+  };
 
   const go = (href: Href) => {
     setNotifications(false);
@@ -91,7 +105,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <View style={{ marginTop: 'auto' }}>
             <Button variant="ghost" icon={CircleHelp} label="Centro de ayuda" onPress={() => setHelp(true)} style={{ justifyContent: 'flex-start', paddingHorizontal: 12 }} />
             <View style={s.sidebarPerson}>
-              <Avatar initials={iniciales(app.name)} />
+              <Avatar initials={iniciales(app.name)} uri={app.foto} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text weight="bold" size={12} numberOfLines={1}>
                   {app.name}
@@ -124,14 +138,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Text>
             )}
             <View>
-              <Button variant="ghost" size="icon" icon={Bell} accessibilityLabel="Notificaciones" onPress={() => setNotifications(!notifications)} />
-              <View style={s.bellDot} pointerEvents="none">
-                <Dot />
-              </View>
+              <Button variant="ghost" size="icon" icon={Bell} accessibilityLabel={hayNueva ? 'Notificaciones, 1 nueva' : 'Notificaciones'} onPress={abrirNotificaciones} />
+              {hayNueva && (
+                <View style={s.bellDot} pointerEvents="none">
+                  <Dot />
+                </View>
+              )}
             </View>
-            <Pressable onPress={() => go('/perfil')} accessibilityRole="link" accessibilityLabel="Ver perfil">
-              <Avatar initials={iniciales(app.name)} />
-            </Pressable>
           </View>
         </View>
 
@@ -152,14 +165,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         {notifications && (
           <View style={[s.notificationPanel, { top: (desktop ? 84 : 64 + insets.top) - 6, right: desktop ? (wide ? 38 : 24) : 16 }]}>
             <Text weight="bold" size={13} style={{ marginBottom: 12 }}>
-              Notificaciones
+              Tu próxima clase
             </Text>
-            <Text weight="semibold" size={12} style={{ lineHeight: 20 }}>
-              Tu próxima clase comienza a las 08:00
-            </Text>
-            <Text size={11} color={colors.mutedForeground} style={{ lineHeight: 20 }}>
-              Matemática · 5.º grado{'\n'}Escuela Básica San José
-            </Text>
+            <PanelProximaClase estado={proxima} onVerAgenda={() => go('/horarios')} />
           </View>
         )}
 
@@ -249,7 +257,7 @@ function MenuSheet({ visible, path, onClose, onNavigate, onHelp }: { visible: bo
         <View style={[s.sheet, { paddingBottom: Math.max(16, insets.bottom + 8) }]} accessibilityViewIsModal accessibilityLabel="Menú">
           <View style={s.sheetHandle} />
           <View style={s.sheetHead}>
-            <Avatar initials={iniciales(app.name)} />
+            <Avatar initials={iniciales(app.name)} uri={app.foto} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text weight="bold" size={14} numberOfLines={1}>
                 {app.name}

@@ -31,7 +31,14 @@ export type ClaseAgenda = {
   ciudad: string | null;
   departamento: string | null;
   dias: Partial<Record<DiaAgenda, Horario>>;
+  /** Siguiente índice al último desarrollado (null = sin manual o manual completado). */
+  indiceSiguiente: { titulo: string; nro: number | null } | null;
+  indicesDesarrollados: number;
+  indicesTotal: number;
 };
+
+/** Manual completado: tiene índices y ya no queda ninguno por desarrollar. */
+export const manualCompleto = (c: ClaseAgenda) => c.indicesTotal > 0 && !c.indiceSiguiente;
 
 const TURNOS: Record<number, string> = { 1: 'Mañana', 2: 'Tarde', 3: 'Noche' };
 const txt = (v: unknown) => {
@@ -67,6 +74,9 @@ export function aClases(filas: Record<string, unknown>[]): ClaseAgenda[] {
       ciudad: txt(f.ciudad),
       departamento: txt(f.departamento),
       dias,
+      indiceSiguiente: txt(f.indice_siguiente) ? { titulo: txt(f.indice_siguiente) as string, nro: f.nro_indice_siguiente === null || f.nro_indice_siguiente === undefined ? null : Number(f.nro_indice_siguiente) } : null,
+      indicesDesarrollados: Number(f.indices_desarrollados) || 0,
+      indicesTotal: Number(f.indices_total) || 0,
     };
   });
 }
@@ -84,6 +94,12 @@ export function clasesDelDia(clases: ClaseAgenda[], dia: DiaAgenda | null): (Cla
     .map((c) => ({ ...c, horario: c.dias[dia] as Horario }))
     .sort((a, b) => (a.turno ?? 9) - (b.turno ?? 9) || a.horario.desde.localeCompare(b.horario.desde) || a.grado.localeCompare(b.grado));
 }
+
+/** "08:20" → 500 minutos. */
+export const aMinutos = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+};
 
 export type Agenda = { esFacilitador: boolean; clases: ClaseAgenda[] };
 

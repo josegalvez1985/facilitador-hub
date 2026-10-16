@@ -14,6 +14,7 @@ import { LoginScreen } from '@/facilitadores/screens/login';
 import { MarkScreen } from '@/facilitadores/screens/mark';
 import { MaterialsScreen } from '@/facilitadores/screens/materials';
 import { ProfileScreen } from '@/facilitadores/screens/profile';
+import { RealizadasScreen } from '@/facilitadores/screens/realizadas';
 import { ScheduleScreen } from '@/facilitadores/screens/schedule';
 import { contrast, palettes, themes } from '@/facilitadores/theme';
 import { ThemeProvider } from '@/facilitadores/theme-provider';
@@ -45,6 +46,7 @@ const routes = {
   '(app)/perfil': ProfileScreen,
   '(app)/evaluaciones': EvaluationsScreen,
   '(app)/marcar': MarkScreen,
+  '(app)/intervenciones': RealizadasScreen,
   login: LoginScreen,
 };
 
@@ -250,18 +252,10 @@ describe('Guardia y sesión', () => {
 /* ------------------------------- Pantallas -------------------------------- */
 
 describe('Facilitadores', () => {
-  it('registra la entrada de demostración desde la clase próxima', async () => {
-    await entrar();
-    await fireEvent.press(screen.getByText('Marcar entrada'));
-    await fireEvent.press(screen.getByText('Confirmar entrada'));
-    expect(await screen.findByText('¡Entrada registrada!')).toBeTruthy();
-    expect(screen.getAllByText('Entrada registrada').length).toBeGreaterThan(0);
-  });
-
   it('navega a horarios desde el Menú de la barra inferior', async () => {
     await entrar();
     await fireEvent.press(screen.getByLabelText('Menú'));
-    await fireEvent.press(await screen.findByText('Mis horarios'));
+    await fireEvent.press(await screen.findByText('Mi agenda'));
     expect(screen).toHavePathname('/horarios');
     expect(await screen.findByText('Tu semana, organizada para enseñar.')).toBeTruthy();
   });
@@ -271,13 +265,13 @@ describe('Barra inferior del celular', () => {
   it('tiene solo Inicio, Marcar, Menú, Perfil y Salir', async () => {
     await entrar();
     for (const b of ['Inicio', 'Marcar', 'Menú', 'Perfil', 'Salir']) expect(screen.getByLabelText(b)).toBeTruthy();
-    expect(screen.queryByText('Mis horarios')).toBeNull(); // está en el Menú, no en la barra
+    expect(screen.queryByText('Mi agenda')).toBeNull(); // está en el Menú, no en la barra
   });
 
   it('el Menú tiene todas las secciones y el Centro de ayuda', async () => {
     await entrar();
     await fireEvent.press(screen.getByLabelText('Menú'));
-    for (const t of ['Mis horarios', 'Mis materiales', 'Evaluaciones', 'Mi perfil', 'Centro de ayuda']) expect(await screen.findByText(t)).toBeTruthy();
+    for (const t of ['Intervenciones realizadas', 'Mi agenda', 'Mis materiales', 'Evaluaciones', 'Mi perfil', 'Centro de ayuda']) expect(await screen.findByText(t)).toBeTruthy();
     await fireEvent.press(screen.getByText('Centro de ayuda'));
     expect(await screen.findByText(/comunícate con tu coordinador educativo/)).toBeTruthy();
   });
@@ -582,7 +576,7 @@ describe('Inicio: KPI "Marcaciones del mes"', () => {
   it('si el usuario no es facilitador no pide el resumen', async () => {
     fetchMock.mockImplementation(async (url) => (String(url).includes('mi-facilitador') ? miFacilitador(null) : json(404, {})));
     await entrar();
-    expect(await screen.findByText('Sin registro de facilitador')).toBeTruthy();
+    expect((await screen.findAllByText('Sin registro de facilitador')).length).toBeGreaterThan(0);
     expect(llamadaA('mis-intervenciones/resumen')).toEqual([]);
   });
 });
@@ -628,7 +622,7 @@ describe('Mis horarios: agenda (página 3 de APEX)', () => {
   async function abrirHorarios() {
     await entrar();
     await fireEvent.press(screen.getByLabelText('Menú'));
-    await fireEvent.press(await screen.findByText('Mis horarios'));
+    await fireEvent.press(await screen.findByText('Mi agenda'));
     await waitFor(() => expect(screen).toHavePathname('/horarios'));
   }
 
@@ -664,7 +658,7 @@ describe('Mis horarios: agenda (página 3 de APEX)', () => {
   it('semana completa: todas las filas con sus días', async () => {
     backendAgenda([fila({}), fila({ id_postulacion: 18200, grado: '5º', lunes: '07:00, 07:40', viernes: ', ' })]);
     await abrirHorarios();
-    await fireEvent.press(screen.getByText('Semana completa'));
+    await fireEvent.press(screen.getByText('Semana'));
     expect(await screen.findByText('2 clases')).toBeTruthy();
     expect(screen.getByText('VIE 08:20–09:00')).toBeTruthy();
     expect(screen.getByText('LUN 07:00–07:40')).toBeTruthy();
@@ -680,5 +674,313 @@ describe('Mis horarios: agenda (página 3 de APEX)', () => {
     fetchMock.mockImplementation(async (url) => (String(url).includes('mi-facilitador') ? miFacilitador(7) : json(404, { code: 'NotFound', message: 'Not Found' })));
     await abrirHorarios();
     expect(await screen.findByText(/Falta publicar en el backend el endpoint mi-agenda/)).toBeTruthy();
+  });
+});
+
+/* --------------------- Inicio con la agenda y la actividad real --------------------- */
+
+describe('Inicio: clases de la semana, clases de hoy y actividad reciente', () => {
+  const DIAS = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
+  // Hoy (si es día hábil) tiene dos clases; otro día hábil, una. Total de la semana: 3.
+  const hoyCol = DIAS[new Date().getDay() - 1];
+  const otroCol = DIAS.find((d) => d !== hoyCol) ?? 'lunes';
+  const fila = (id: number, dias: Record<string, string>) => ({
+    id_postulacion: id, id_institucion: 1236, nombre_institucion: 'Escuela Básica N° 6304', turno: 1, turno_descripcion: 'Mañana',
+    grado: '8º', lunes: ', ', martes: ', ', miercoles: ', ', jueves: ', ', viernes: ', ', nombre_profesor: 'Ramon Ortiz', manual: 'TENER', ...dias,
+  });
+
+  function backend() {
+    const dosHoy = hoyCol ? [fila(1, { [hoyCol]: '08:20, 09:00' }), fila(2, { [hoyCol]: '09:00, 09:40' })] : [fila(1, { lunes: '08:20, 09:00' }), fila(2, { martes: '09:00, 09:40' })];
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes('mi-facilitador')) return miFacilitador(7);
+      if (u.includes('mi-agenda')) return json(200, { success: true, es_facilitador: true, data: [...dosHoy, fila(3, { [otroCol]: '10:00, 10:40' })] });
+      if (u.includes('mis-intervenciones/recientes'))
+        return json(200, {
+          success: true,
+          data: [
+            { id_intervencion: 91, fecha_hora: '2026-10-13T08:30:00', si_no: 'Si', manual: 'TENER', indice: '2. El respeto', institucion: 'Escuela Básica N° 6304', grado: '8º' },
+            { id_intervencion: 90, fecha_hora: '2026-10-12T09:00:00', si_no: 'No', motivo_desarrollo: 'Lluvia', manual: 'SER', institucion: 'Escuela Básica N° 6304', grado: '3º' },
+          ],
+        });
+      return json(404, {});
+    });
+  }
+
+  it('el KPI cuenta las clases de la semana y las de hoy según la agenda', async () => {
+    backend();
+    await entrar();
+    expect(await screen.findByText('3')).toBeTruthy();
+    expect(screen.getAllByText(hoyCol ? '2 clases' : '0 clases').length).toBeGreaterThan(0);
+  });
+
+  it('"Tus clases de hoy" muestra la agenda de hoy con el botón Marcar', async () => {
+    backend();
+    await entrar();
+    if (!hoyCol) {
+      expect(await screen.findByText('No tenés clases programadas para hoy.')).toBeTruthy();
+      return;
+    }
+    expect(await screen.findByText('08:20 – 09:00')).toBeTruthy();
+    expect(screen.getByText('09:00 – 09:40')).toBeTruthy();
+    // El de la tarjeta es un botón; el de la barra inferior, un enlace.
+    await fireEvent.press(screen.getAllByRole('button', { name: 'Marcar' })[0]!);
+    await waitFor(() => expect(screen).toHavePathname('/marcar'));
+  });
+
+  it('"Actividad reciente" muestra las últimas intervenciones del facilitador', async () => {
+    backend();
+    await entrar();
+    expect(await screen.findByText('Clase desarrollada · TENER')).toBeTruthy();
+    expect(screen.getByText('No desarrollada · Lluvia · SER')).toBeTruthy();
+    expect(screen.getByText('Escuela Básica N° 6304 · 8º grado · 2. El respeto')).toBeTruthy();
+    expect(String(llamadaA('mis-intervenciones/recientes')[0])).not.toContain('id_facilitador');
+  });
+});
+
+/* ----------------- Mi agenda: próximo índice y línea de tiempo ----------------- */
+
+describe('Mi agenda: próximo índice y línea de tiempo', () => {
+  const dia = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'][new Date().getDay() - 1] ?? 'lunes';
+  const fila = (o: Record<string, unknown>) => ({
+    id_postulacion: 1, id_institucion: 1236, nombre_institucion: 'Escuela Básica N° 6304', turno: 1, turno_descripcion: 'Mañana', grado: '8º',
+    lunes: ', ', martes: ', ', miercoles: ', ', jueves: ', ', viernes: ', ', [dia]: '08:20, 09:00', nombre_profesor: 'Ramon Ortiz', manual: 'TENER',
+    indice_siguiente: '4. La honestidad', nro_indice_siguiente: 4, indices_desarrollados: 3, indices_total: 12, ...o,
+  });
+
+  function backend(filas: Record<string, unknown>[]) {
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes('mi-facilitador')) return miFacilitador(7);
+      if (u.includes('mi-agenda')) return json(200, { success: true, es_facilitador: true, data: filas });
+      return json(404, {});
+    });
+  }
+
+  async function abrirAgenda() {
+    await entrar();
+    await fireEvent.press(screen.getByLabelText('Menú'));
+    await fireEvent.press(await screen.findByText('Mi agenda'));
+    await waitFor(() => expect(screen).toHavePathname('/horarios'));
+    await fireEvent.press(await screen.findByLabelText(new RegExp(`^${{ lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles', jueves: 'Jueves', viernes: 'Viernes' }[dia]} \\d+`)));
+  }
+
+  it('cada clase muestra el siguiente índice al último desarrollado y el avance', async () => {
+    backend([fila({}), fila({ id_postulacion: 2, grado: '9º', [dia]: '09:00, 09:40', indice_siguiente: null, nro_indice_siguiente: null, indices_desarrollados: 12, indices_total: 12 })]);
+    await abrirAgenda();
+    expect(await screen.findByText('4. La honestidad')).toBeTruthy();
+    expect(screen.getByText('3 de 12')).toBeTruthy();
+    expect(screen.getByText('Manual completado')).toBeTruthy();
+    expect(screen.getByText('12 de 12')).toBeTruthy();
+  });
+
+  it('la línea de tiempo muestra un bloque por clase', async () => {
+    backend([fila({}), fila({ id_postulacion: 2, grado: '9º', [dia]: '13:00, 13:40', turno: 2, turno_descripcion: 'Tarde' })]);
+    await abrirAgenda();
+    await fireEvent.press(screen.getByText('Línea de tiempo'));
+    const linea = await screen.findByLabelText('Línea de tiempo del día');
+    await fireEvent(linea, 'layout', { nativeEvent: { layout: { width: 400, height: 600 } } });
+    // Cada bloque muestra la institución, aunque la clase sea corta.
+    expect(await screen.findAllByText('Escuela Básica N° 6304')).toHaveLength(2);
+  });
+
+  it('el menú dice "Mi agenda"', async () => {
+    await entrar();
+    await fireEvent.press(screen.getByLabelText('Menú'));
+    expect(await screen.findByText('Mi agenda')).toBeTruthy();
+    expect(screen.queryByText('Mis horarios')).toBeNull();
+  });
+});
+
+/* ------------------------------ Mis materiales ------------------------------ */
+
+describe('Mis materiales: manuales e índices desarrollados y pendientes', () => {
+  const indices = (hechos: number[], total: number) =>
+    Array.from({ length: total }, (_, k) => ({
+      id_indice: 100 + k,
+      nro_indice: k + 1,
+      titulo: `${k + 1}. Índice ${k + 1}`,
+      desarrollado: hechos.includes(k + 1),
+      fecha_desarrollo: hechos.includes(k + 1) ? '2026-10-13T08:30:00' : null,
+    }));
+
+  function backend() {
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes('mi-facilitador')) return miFacilitador(7);
+      if (u.includes('mis-materiales'))
+        return json(200, {
+          success: true,
+          es_facilitador: true,
+          data: [
+            { id_postulacion: 1, institucion: 'Escuela Básica N° 6304', grado: '8º', turno_descripcion: 'Mañana', manual: 'TENER', estado: 'Activo', indices: indices([1, 2, 3], 5) },
+            { id_postulacion: 2, institucion: 'Escuela Básica N° 6304', grado: '3º', turno_descripcion: 'Tarde', manual: 'SER', estado: 'Finalizado', indices: indices([1, 2], 2) },
+          ],
+        });
+      return json(404, {});
+    });
+  }
+
+  async function abrir() {
+    await entrar();
+    await fireEvent.press(screen.getByLabelText('Menú'));
+    await fireEvent.press(await screen.findByText('Mis materiales'));
+    await waitFor(() => expect(screen).toHavePathname('/materiales'));
+  }
+
+  it('resume desarrollados, pendientes y manuales completos', async () => {
+    backend();
+    await abrir();
+    expect(await screen.findByText('Índices desarrollados')).toBeTruthy();
+    expect(screen.getByText('5')).toBeTruthy(); // 3 + 2 desarrollados
+    expect(screen.getByText('2')).toBeTruthy(); // pendientes del TENER
+    expect(screen.getByText('3 de 5')).toBeTruthy();
+    expect(screen.getByText('2 de 2')).toBeTruthy();
+    expect(screen.getByText('4. Índice 4')).toBeTruthy(); // próximo del TENER
+  });
+
+  it('al desplegar marca desarrollados, el próximo y los pendientes', async () => {
+    backend();
+    await abrir();
+    await fireEvent.press((await screen.findAllByText('Ver índices'))[0]!);
+    expect(screen.getAllByText('Desarrollado · 13 oct.').length).toBe(3);
+    expect(screen.getByText('Próximo')).toBeTruthy();
+    expect(screen.getByText('Pendiente')).toBeTruthy();
+  });
+
+  it('filtra por completos y por manual', async () => {
+    backend();
+    await abrir();
+    await fireEvent.press(await screen.findByText('Completos'));
+    expect(screen.queryByText('3 de 5')).toBeNull();
+    expect(screen.getByText('2 de 2')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Todos'));
+    await fireEvent.press(screen.getByLabelText('Filtrar TENER'));
+    expect(screen.getByText('3 de 5')).toBeTruthy();
+    expect(screen.queryByText('2 de 2')).toBeNull();
+  });
+
+  it('si el endpoint no está publicado lo avisa', async () => {
+    fetchMock.mockImplementation(async (url) => (String(url).includes('mi-facilitador') ? miFacilitador(7) : json(404, { code: 'NotFound', message: 'Not Found' })));
+    await abrir();
+    expect(await screen.findByText(/Falta publicar en el backend el endpoint mis-materiales/)).toBeTruthy();
+  });
+});
+
+/* ------------------- Intervenciones realizadas (páginas 4-6) ------------------- */
+
+describe('Intervenciones realizadas (páginas 4, 5 y 6 de APEX)', () => {
+  function backend() {
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes('mi-facilitador')) return miFacilitador(7);
+      if (u.includes('intervenciones-realizadas/instituciones'))
+        return json(200, {
+          success: true,
+          es_facilitador: true,
+          data: [
+            { id_institucion: 1236, nombre_institucion: 'Escuela Básica N° 6304', marcaciones: 12, desarrolladas: 9 },
+            { id_institucion: 1300, nombre_institucion: 'Colegio Nacional', marcaciones: 0, desarrolladas: 0 },
+          ],
+        });
+      if (u.includes('intervenciones-realizadas/clases'))
+        return json(200, {
+          success: true,
+          es_facilitador: true,
+          data: {
+            filas: [
+              { id_postulacion: 1, turno: 1, turno_descripcion: 'Mañana', grado: '8º', seccion: 'A', enfasis: 'Ciencias', lunes: '8º A', martes: null, miercoles: null, jueves: null, viernes: null },
+              { id_postulacion: 1, turno: 1, turno_descripcion: 'Mañana', grado: '8º', seccion: 'A', enfasis: 'Ciencias', lunes: null, martes: null, miercoles: '8º A', jueves: null, viernes: null },
+              { id_postulacion: 2, turno: 2, turno_descripcion: 'Tarde', grado: '9º', seccion: null, enfasis: null, lunes: null, martes: null, miercoles: null, jueves: null, viernes: '9º ' },
+            ],
+            resumen: [
+              { turno: 1, grado: '8º', seccion: 'A', marcaciones: 8, desarrolladas: 6 },
+              { turno: 2, grado: '9º', seccion: 'A', marcaciones: 4, desarrolladas: 3 },
+            ],
+          },
+        });
+      if (u.includes('intervenciones-realizadas/historial'))
+        return json(200, {
+          success: true,
+          es_facilitador: true,
+          data: [
+            { id_intervencion: 3, fecha_hora: '2026-10-14T08:20:00', manual: 'TENER', id_indice: 4, indice: '4. Índice 4', observacion: null, desarrollo: 'Si' },
+            { id_intervencion: 2, fecha_hora: '2026-10-07T08:20:00', manual: 'TENER', id_indice: 3, indice: '3. Índice 3', observacion: 'Lluvia fuerte', desarrollo: 'No' },
+            { id_intervencion: 1, fecha_hora: '2026-09-30T08:20:00', manual: 'SER', id_indice: 1, indice: '1. Introducción', observacion: null, desarrollo: 'Si' },
+          ],
+        });
+      return json(404, { success: false, message: 'Not Found' });
+    });
+  }
+
+  async function abrir() {
+    await entrar();
+    await fireEvent.press(screen.getByLabelText('Menú'));
+    await fireEvent.press(await screen.findByText('Intervenciones realizadas'));
+    await waitFor(() => expect(screen).toHavePathname('/intervenciones'));
+  }
+
+  it('lista tus instituciones con marcaciones y % desarrolladas, sin mandar el id del facilitador', async () => {
+    backend();
+    await abrir();
+    expect(await screen.findByText('Escuela Básica N° 6304')).toBeTruthy();
+    expect(screen.getByText('Colegio Nacional')).toBeTruthy();
+    expect(screen.getByText(/12 marcaciones · 75% desarrolladas/)).toBeTruthy();
+    expect(String(llamadaA('intervenciones-realizadas/instituciones')[0])).not.toContain('facilitador');
+  });
+
+  it('al elegir una institución muestra una tarjeta por clase con sus días y contadores', async () => {
+    backend();
+    await abrir();
+    await fireEvent.press(await screen.findByLabelText('Escuela Básica N° 6304, 12 marcaciones'));
+    expect(await screen.findByText('8º A')).toBeTruthy();
+    expect(String(llamadaA('intervenciones-realizadas/clases')[0])).toContain('id_institucion=1236');
+    // Las dos filas del 8º A (lunes y miércoles) son una sola clase.
+    expect(screen.getByLabelText('Días con marcaciones: Lunes, Miércoles')).toBeTruthy();
+    expect(screen.getByLabelText('Días con marcaciones: Viernes')).toBeTruthy();
+    expect(screen.getByText('Énfasis: Ciencias')).toBeTruthy();
+    expect(screen.getByText(/8 marcaciones · 75% desarrolladas/)).toBeTruthy();
+    // 9º sin sección: los contadores se cruzan con NVL(sección,'A'), como la página 6.
+    expect(screen.getByText(/4 marcaciones · 75% desarrolladas/)).toBeTruthy();
+  });
+
+  it('al elegir una clase muestra el historial por mes, filtra y vuelve con la miga de pan', async () => {
+    backend();
+    await abrir();
+    await fireEvent.press(await screen.findByLabelText('Escuela Básica N° 6304, 12 marcaciones'));
+    await fireEvent.press(await screen.findByLabelText('Ver historial de 8º A, Mañana'));
+    expect(await screen.findByText('OCTUBRE 2026')).toBeTruthy();
+    const url = String(llamadaA('intervenciones-realizadas/historial')[0]);
+    for (const p of ['id_institucion=1236', 'turno=1', `grado=${encodeURIComponent('8º')}`, 'seccion=A']) expect(url).toContain(p);
+    expect(screen.getByText('SEPTIEMBRE 2026')).toBeTruthy();
+    expect(screen.getByText('Miércoles, 14 de octubre · 08:20')).toBeTruthy();
+    expect(screen.getByText('“Lluvia fuerte”')).toBeTruthy();
+    expect(screen.getByText('67% de las clases marcadas se desarrollaron')).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('tab', { name: 'No desarrolladas' }));
+    expect(screen.queryByText('4. Índice 4')).toBeNull();
+    expect(screen.getByText('3. Índice 3')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('tab', { name: 'Todas' }));
+    await fireEvent.press(screen.getByLabelText('Filtrar SER'));
+    expect(screen.getByText('1. Introducción')).toBeTruthy();
+    expect(screen.queryByText('3. Índice 3')).toBeNull();
+
+    await fireEvent.press(screen.getByRole('link', { name: 'Escuela Básica N° 6304' }));
+    expect(await screen.findByText('Tus clases')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('link', { name: 'Instituciones' }));
+    expect(await screen.findByText('Colegio Nacional')).toBeTruthy();
+  });
+
+  it('si los endpoints no están publicados lo avisa', async () => {
+    fetchMock.mockImplementation(async (url) => (String(url).includes('mi-facilitador') ? miFacilitador(7) : json(404, { code: 'NotFound', message: 'Not Found' })));
+    await abrir();
+    expect(await screen.findByText(/Falta publicar en el backend los endpoints de intervenciones-realizadas/)).toBeTruthy();
+  });
+
+  it('si el usuario no es facilitador no pide datos', async () => {
+    fetchMock.mockImplementation(async (url) => (String(url).includes('mi-facilitador') ? miFacilitador(null) : json(404, {})));
+    await abrir();
+    expect(await screen.findByText('Tu usuario no está registrado como facilitador.')).toBeTruthy();
+    expect(llamadaA('intervenciones-realizadas')).toEqual([]);
   });
 });

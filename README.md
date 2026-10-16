@@ -11,10 +11,13 @@ Está hecha con **React Native + Expo**. Una sola base de código funciona en **
 | Login y sesión | Conectado al backend (ORDS, módulo `ethos`) |
 | Evaluaciones (página 11 de APEX) | Conectada: requiere publicar [sql/facilitador_app_ethos.sql](sql/facilitador_app_ethos.sql) |
 | Marcar / Registrar intervención (página 2 de APEX) | Conectada, con ubicación real del GPS: requiere publicar [sql/intervenciones_app_ethos.sql](sql/intervenciones_app_ethos.sql) |
-| Inicio | KPI **Marcaciones del mes** conectado (`mis-intervenciones/resumen`); el resto, demostración |
-| Mis horarios (página 3 de APEX) | Conectada: requiere publicar [sql/agenda_app_ethos.sql](sql/agenda_app_ethos.sql). "Añadir clase" sigue siendo de demostración |
-| Mis materiales | Todavía con **datos de demostración** |
-| Perfil | Datos del usuario logueado; el modo claro/oscuro y el tema de color se guardan en el dispositivo |
+| Inicio | Conectado: los 4 KPIs (**Clases esta semana**, **Marcaciones del mes**, **Materiales desarrollados**, **Instituciones**), **Tus clases de hoy** y **Actividad reciente** |
+| Mi agenda (página 3 de APEX) | Conectada, con el **próximo índice** de cada clase y vista **Línea de tiempo**: requiere publicar [sql/agenda_app_ethos.sql](sql/agenda_app_ethos.sql) |
+| Intervenciones realizadas (páginas 4, 5 y 6 de APEX) | Conectada: instituciones, clases con sus días e historial, con contadores: requiere publicar [sql/intervenciones_realizadas_app_ethos.sql](sql/intervenciones_realizadas_app_ethos.sql) |
+| Historial de intervenciones (páginas 7 y 8 de APEX) | Conectado: búsqueda, filtros por mes y fecha, y edición: requiere publicar [sql/historial_app_ethos.sql](sql/historial_app_ethos.sql) |
+| Mis materiales | Conectada: manuales e índices **desarrollados y pendientes**: requiere publicar [sql/materiales_app_ethos.sql](sql/materiales_app_ethos.sql) |
+| Perfil | Datos del usuario logueado y **foto de perfil**; la foto, el modo claro/oscuro y el tema de color se guardan en el dispositivo |
+| Notificaciones (campana) | Conectada: **próxima clase** según la hora actual, con institución y próximo índice (sale de `mi-agenda`) |
 
 ## Requisitos
 
@@ -62,8 +65,10 @@ src/
     login.tsx                /login
     (app)/_layout.tsx        Guardia de sesión + shell compartido (menú lateral / barra inferior + Menú)
     (app)/index.tsx          /              Inicio
-    (app)/horarios.tsx       /horarios      (página 3 de APEX: Agenda)
-    (app)/materiales.tsx     /materiales
+    (app)/horarios.tsx       /horarios      (página 3 de APEX: Mi agenda)
+    (app)/materiales.tsx     /materiales    (Mis materiales)
+    (app)/intervenciones.tsx /intervenciones (páginas 4, 5 y 6 de APEX: Intervenciones realizadas)
+    (app)/historial.tsx      /historial     (páginas 7 y 8 de APEX: Historial de intervenciones)
     (app)/evaluaciones.tsx   /evaluaciones  (página 11 de APEX)
     (app)/marcar.tsx         /marcar        (página 2 de APEX: Registrar intervención)
     (app)/perfil.tsx         /perfil
@@ -75,16 +80,24 @@ src/
       guard.tsx              RequiereSesion: protege todas las pantallas de (app)/
       recordar.ts            "Recordar usuario y contraseña"
     evaluaciones.ts          Evaluaciones: lectura de GET mis-evaluaciones
-    agenda.ts                Mis horarios: lectura de GET mi-agenda (V_AGENDA)
+    agenda.ts                Mi agenda: lectura de GET mi-agenda (V_AGENDA + próximo índice)
+    clase-agenda.tsx         Tarjeta de clase (Mi agenda y "Tus clases de hoy") con el próximo índice
+    proxima-clase.tsx        Campana de notificaciones: próxima clase según la hora actual
+    linea-tiempo.tsx         Vista "Línea de tiempo" de Mi agenda
+    materiales.ts            Mis materiales: lectura de GET mis-materiales
+    realizadas.ts            Intervenciones realizadas: GET intervenciones-realizadas/*
+    historial.ts             Historial de intervenciones: GET/PUT historial-intervenciones*
+    editar-intervencion.tsx  Hoja "Editar intervención" (página 8)
     intervenciones.ts        Marcar: listas en cascada, validaciones y guardado (mis-intervenciones)
     ubicacion.ts             GPS del dispositivo (expo-location)
+    foto-perfil.ts           Foto de perfil: galería, recorte a 256 px y guardado en el dispositivo
     fechas.ts                Fechas en español a partir de la fecha actual (hoy, semana, meses)
     theme.ts                 6 temas de color × modo claro/oscuro, tipografía y puntos de quiebre
     theme-provider.tsx       Tema activo, preferencia guardada en el dispositivo y makeStyles()
     toast.tsx                Avisos breves ("Bienvenido", "Tu sesión se cerró")
-    ui.tsx                   Componentes base (Text, Button, Badge, Field, Modal…)
+    ui.tsx                   Componentes base (Text, Button, Badge, Field, Modal, Avatar, AvatarAureola…)
     shell.tsx                Menú y navegación responsive
-    data.ts / provider.tsx   Datos y estado de demostración (pantallas aún no conectadas)
+    data.ts / provider.tsx   Datos y estado de demostración (pantallas aún no conectadas) y la foto de perfil
     screens/                 Pantallas
 sql/                         Backend (Oracle APEX / ORDS): scripts y contrato → sql/README.md
 public/                      Plantilla web, manifest e íconos de la PWA
@@ -115,15 +128,92 @@ Los registros de un facilitador **nunca se mezclan** con los de otro:
 | Página APEX | Pantalla | Endpoints | Script del backend |
 |---|---|---|---|
 | 11 · Evaluaciones | `/evaluaciones` (menú **Evaluaciones**) | `GET mi-facilitador`, `GET mis-evaluaciones` | [sql/facilitador_app_ethos.sql](sql/facilitador_app_ethos.sql) |
-| 3 · Agenda | `/horarios` (menú **Mis horarios**) | `GET mi-agenda` | [sql/agenda_app_ethos.sql](sql/agenda_app_ethos.sql) |
+| 3 · Agenda | `/horarios` (menú **Mi agenda**) | `GET mi-agenda` | [sql/agenda_app_ethos.sql](sql/agenda_app_ethos.sql) |
+| — · Mis materiales | `/materiales` (menú **Mis materiales**) | `GET mis-materiales` | [sql/materiales_app_ethos.sql](sql/materiales_app_ethos.sql) |
+| — · Inicio (KPIs y actividad) | `/` | `GET mi-agenda`, `GET mis-intervenciones/resumen`, `GET mis-intervenciones/recientes` | agenda + intervenciones |
 | 2 · Intervención | `/marcar` (botón **Marcar** y menú **Registrar intervención**) | `GET mis-intervenciones/inicio · horarios · clase · indices`, `POST mis-intervenciones` | [sql/intervenciones_app_ethos.sql](sql/intervenciones_app_ethos.sql) |
+| 4 · Intervenciones, 5 · Días, 6 · Manuales | `/intervenciones` (menú **Intervenciones realizadas**) | `GET intervenciones-realizadas/instituciones · clases · historial` | [sql/intervenciones_realizadas_app_ethos.sql](sql/intervenciones_realizadas_app_ethos.sql) |
 
-### Mis horarios (página 3)
+| 7 · Historial de Intervenciones, 8 · Observación | `/historial` (menú **Historial de intervenciones**) y **Editar** en Intervenciones realizadas | `GET historial-intervenciones`, `GET` / `PUT historial-intervenciones/:id` | [sql/historial_app_ethos.sql](sql/historial_app_ethos.sql) |
 
-Mismo reporte que APEX (`V_AGENDA` del usuario, activas, año lectivo actual, mismo orden), en dos vistas:
+### Historial de intervenciones (páginas 7 y 8)
 
-- **Por día:** la semana actual con "HOY" resaltado y la cantidad de clases de cada día. Cada clase muestra horario, turno, grado y sección, institución, profesor, ciudad, manual (con su color) y énfasis. Las de hoy tienen el botón **Marcar**.
-- **Semana completa:** todas las filas, con los días y horarios de cada una.
+- **Buscador** (fecha, manual, observación, Sí/No, institución, grado, énfasis) y facetas **Mes** (arranca en el mes actual, como APEX) y **Fecha** (días del mes con su cantidad). **Restablecer** vuelve al mes actual.
+- Intervenciones agrupadas por día, con hora, Sí/No, manual (color), índice, institución, grado, turno, énfasis, motivo y observación; de a 50 con **Ver más**.
+- **Editar** (página 8) abre una hoja encima: el manual es solo lectura; se cambia el índice (los del manual, con buscador), ¿Desarrolló? Sí/No, el motivo (solo con "No"; como en APEX, al pasar a "Sí" el motivo guardado no se borra) y la observación (hasta 1000). Con "No" + "Otros" la observación es obligatoria (validación `OBS`). Al guardar se refresca la lista. El mismo formulario se abre desde el historial de **Intervenciones realizadas**.
+- Solo se pueden editar intervenciones propias del año lectivo actual (lo controla el servidor).
+
+### Intervenciones realizadas (páginas 4, 5 y 6)
+
+Los tres modales de APEX (institución → días → historial) quedan en una sola pantalla, con las mismas consultas:
+
+- **Instituciones (página 4):** tus instituciones del año lectivo, con las marcaciones y el % desarrolladas ("Sí") de cada una. Con más de 5 aparece un buscador.
+- **Clases (página 5):** una tarjeta por clase (grado, sección y turno) en lugar de una fila por día: muestra el énfasis, los días **L M X J V** en que marcaste y sus contadores. Ordenadas por turno, grado y sección.
+- **Historial (página 6):** las intervenciones de la clase agrupadas por mes, de la más nueva a la más vieja, con ✓/✗, manual (con su color), índice y observación. Filtros Todas / Desarrolladas / No desarrolladas y por manual; de a 15, con **Ver más**.
+- **Navegación:** en el celular se avanza por pasos y se vuelve con la miga de pan (Instituciones › Institución › Clase). En escritorio las instituciones quedan a la izquierda, con la primera elegida, y el detalle a la derecha.
+
+### Inicio
+
+| KPI / sección | De dónde sale |
+|---|---|
+| Foto con aureola (junto al saludo) | La foto de perfil guardada en el dispositivo (o las iniciales), con un anillo degradé de los colores del tema que gira lento y un brillo suave. Queda quieta si el sistema tiene "reducir movimiento". Al tocarla se abre Perfil |
+| Clases esta semana | Días con horario de cada fila de la agenda (`mi-agenda`); abajo, las de hoy |
+| Marcaciones del mes | Intervenciones del mes actual (hora de Paraguay); abajo, cuántas fueron "Sí" |
+| Materiales desarrollados | Índices desarrollados hasta la fecha; abajo, manuales completos (postulaciones `Finalizado`) |
+| Instituciones | Instituciones distintas en tus postulaciones del año lectivo actual |
+| Frase del día (portada) | Una de las 100 frases de [docs/frases-docentes.md](docs/frases-docentes.md), distinta cada día en orden aleatorio, sin repetir hasta haber mostrado las 100 (después se mezclan de nuevo). Si editás el `.md`, corré `npm run frases` para regenerar `src/facilitadores/frases.ts` |
+| Tus clases de hoy | La agenda del día, con el próximo índice y el botón **Marcar** |
+| Actividad reciente | Tus últimas 5 intervenciones |
+
+### Notificaciones (campana)
+
+La campana de la barra superior muestra **tu próxima clase**, calculada con la agenda (`mi-agenda`) y la hora actual:
+
+- **Cuál:** la primera clase de hoy que todavía no empezó. Si hoy no queda ninguna, la primera del siguiente día con clases (busca hasta una semana). Se recalcula cada minuto.
+- **Qué muestra:** cuándo ("Hoy · en 25 min", "Mañana" o la fecha), el horario, la institución con grado, sección y turno, el manual con el **próximo índice** (o "completado") y el botón **Ver mi agenda**.
+- **Punto de "nueva":** aparece cuando hay una próxima clase sin ver y se apaga al abrir la campana. Vuelve a aparecer cuando la próxima clase cambia (empezó la anterior, cambió el día o la agenda). Lo visto se recuerda solo en memoria: al volver a entrar, el punto aparece otra vez.
+- Si el usuario no es facilitador no se pide nada, igual que en el resto de las pantallas.
+
+### Perfil
+
+- **Datos personales:** nombre, usuario y correo del login, solo lectura.
+- **Foto de perfil:** se toca el avatar o **Cargar foto / Cambiar foto**, y **Quitar** para volver a las iniciales. Se elige de la galería (`expo-image-picker`), se recorta en cuadrado y se achica a 256 px en JPEG (`expo-image-manipulator`) para no llenar el almacenamiento.
+  - Se guarda **solo en este dispositivo**: `localStorage` en la PWA y almacenamiento local en el APK, con una clave por usuario (`facilitadores.foto.<USUARIO>`). No se sube al backend ni aparece en otro equipo.
+  - Se muestra en el saludo de Inicio (con la aureola), en el menú lateral de escritorio y en el panel **Menú** del celular.
+  - En la PWA no hay editor de recorte: se toma el cuadrado central. En Android e iOS aparece el editor.
+- **Apariencia:** modo claro / oscuro / automático y 6 temas de color, también guardados en el dispositivo.
+
+### Mi agenda (página 3)
+
+Mismo reporte que APEX (`V_AGENDA` del usuario, activas, año lectivo actual, mismo orden), en tres vistas:
+
+- **Por día:** la semana actual con "HOY" resaltado y la cantidad de clases de cada día. Cada clase muestra horario, turno, grado y sección, institución, profesor, ciudad, manual (con su color), énfasis y el **próximo índice** (el siguiente al último desarrollado) con su avance ("3 de 12"), o "Manual completado". Las de hoy tienen el botón **Marcar**.
+- **Línea de tiempo:** el día como una columna de horas, con un bloque por clase del color de su manual, separadores de Mañana y Tarde, y una línea roja con la hora actual cuando el día es hoy.
+- **Semana:** todas las filas, con los días y horarios de cada una.
+
+### Mis materiales
+
+Cada manual de tus postulaciones del año lectivo (también las finalizadas) con **todos sus índices**:
+
+- **Resumen:** índices desarrollados, pendientes y manuales completos, con el avance general.
+- **Filtros:** Todos / En curso / Completos, y por manual (con su color).
+- **Tarjeta por manual:** grado, turno, institución, avance ("3 de 12") y próximo índice.
+- **Ver índices:** despliega la lista con ✓ desarrollado (con fecha), ○ pendiente, y el **próximo** resaltado con el botón **Marcar**.
+- **Descargar/Compartir:** exporta el índice con su estado.
+
+### Colores de los manuales
+
+Una sola constante (`COLOR_MANUAL` en `src/facilitadores/intervenciones.ts`) con los colores del sistema APEX, usada en todas las pantallas:
+
+| Manual | Color | Código |
+|---|---|---|
+| Ser | rojo | `#e74c3c` |
+| Hacer | verde | `#27ae60` |
+| Tener | lila | `#c39bd3` |
+| Carácter | gris | `#a6a6a6` |
+| Visión | amarillo | `#f9e54e` |
+| Coraje | celeste | `#3498db` |
+| Liderazgo | rojo | `#e74c3c` |
 
 ### Marcar (página 2)
 
@@ -143,11 +233,12 @@ Cómo se porta una página:
 
 ## Diseño responsive
 
+- **Barra superior:** título de la sección y la campana de notificaciones (sin avatar; la foto está en Inicio, el menú y Perfil).
 - **Menos de 800 px de ancho** (celulares): barra superior, y barra inferior con **Inicio · Marcar · Menú · Perfil · Salir**.
-  - **Menú** abre un panel con **todas** las secciones (Inicio, Registrar intervención, Mis horarios, Mis materiales, Evaluaciones, Mi perfil) y el Centro de ayuda. Las secciones nuevas aparecen ahí solas.
+  - **Menú** abre un panel con **todas** las secciones (Inicio, Registrar intervención, Intervenciones realizadas, Historial de intervenciones, Mi agenda, Mis materiales, Evaluaciones, Mi perfil) y el Centro de ayuda. Las secciones nuevas aparecen ahí solas.
   - **Salir** pide confirmación antes de cerrar la sesión.
 - **800 px o más** (tablets, escritorio, web): menú lateral fijo, y en Inicio la columna de calendario y accesos rápidos.
-- En Perfil → **Apariencia**: modo claro / oscuro / automático y 6 temas de color.
+- En Perfil → **Apariencia**: modo claro / oscuro / automático y 6 temas de color. También ahí se carga la foto de perfil.
 
 ## Solución de problemas
 
@@ -155,7 +246,11 @@ Cómo se porta una página:
 |---|---|---|
 | `ords/%3Cesquema%3E/...` o "blocked by CORS policy" en el navegador | El servidor de desarrollo sigue con una URL vieja, o la ruta no existe (404 sin encabezados CORS) | `npx expo start --clear`. ORDS ya maneja CORS: no hace falta configurarlo. |
 | Evaluaciones: "Falta publicar en el backend el endpoint mi-facilitador" | No se corrió `sql/facilitador_app_ethos.sql` | Correrlo en APEX (ver [sql/README.md](sql/README.md)) |
-| Mis horarios: "Falta publicar en el backend el endpoint mi-agenda" | No se corrió `sql/agenda_app_ethos.sql` | Correrlo en APEX |
+| Mi agenda: "Falta publicar en el backend el endpoint mi-agenda" | No se corrió `sql/agenda_app_ethos.sql` | Correrlo en APEX |
+| Historial / Editar: "Falta publicar en el backend los endpoints de historial-intervenciones" | No se corrió `sql/historial_app_ethos.sql` | Correrlo en APEX |
+| Intervenciones realizadas: "Falta publicar en el backend los endpoints de intervenciones-realizadas" | No se corrió `sql/intervenciones_realizadas_app_ethos.sql` | Correrlo en APEX |
+| Mis materiales: "Falta publicar en el backend el endpoint mis-materiales" | No se corrió `sql/materiales_app_ethos.sql` | Correrlo en APEX |
+| Inicio: un KPI dice "Falta publicar mis-intervenciones" | No se corrió (o no se volvió a correr) `sql/intervenciones_app_ethos.sql` | Correrlo en APEX |
 | Marcar: "Falta publicar en el backend los endpoints de mis-intervenciones" | No se corrió `sql/intervenciones_app_ethos.sql` | Correrlo en APEX |
 | Marcar: "Permití el acceso a la ubicación" | El navegador o el celular no dio permiso de ubicación | Habilitar la ubicación para la app y tocar **Reintentar** |
 | Evaluaciones: "Tu usuario (X) no está registrado como facilitador" | El usuario no tiene fila en `FACILITADORES` | Revisar `FACILITADORES.USUARIO` en APEX |
@@ -165,7 +260,19 @@ Cómo se porta una página:
 
 ### Android: APK
 
-El APK se compila en la nube con EAS Build. Requiere una cuenta gratuita de Expo.
+**Automático (GitHub Actions):** cada push a `main` o `react-native` compila el APK ([.github/workflows/apk.yml](.github/workflows/apk.yml)) y lo publica en el release `apk-latest`. Se reemplaza el del commit anterior, así que siempre hay uno solo, el del último commit, y la URL no cambia:
+
+```
+https://github.com/josegalvez1985/facilitador-hub/releases/download/apk-latest/facilitadores.apk
+```
+
+- Los cambios que solo tocan `.md`, `sql/`, `docs/` o `__tests__/` no compilan. También se puede correr a mano desde la pestaña **Actions** → **APK** → **Run workflow**.
+- El `versionCode` es el número de corrida, así Android acepta instalarlo encima del anterior. La versión visible sigue siendo `version` de `app.json`.
+- Está firmado con la clave de depuración de la plantilla de Expo, igual en cada corrida. El workflow verifica la firma antes de publicar: si cambiara, el celular obligaría a desinstalar.
+- En GitHub, **Settings → General → Releases → Immutable releases** tiene que estar apagada; si no, no se puede reemplazar el APK.
+- Si el repositorio es privado, la descarga pide iniciar sesión en GitHub.
+
+**Manual (EAS Build):** el APK se compila en la nube de Expo. Requiere una cuenta gratuita de Expo.
 
 ```sh
 npx eas-cli@latest login

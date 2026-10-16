@@ -33,12 +33,20 @@ CREATE OR REPLACE PACKAGE PKG_AGENDA_APP_ETHOS AS
   --   nombre_profesor, id_enfasis, enfasis, id_materia, manual, estado,
   --   id_postulacion, anio, departamento, ciudad } ] }
   -- Los dias vienen como en V_AGENDA: 'hh24:mi, hh24:mi', o ', ' si ese dia no hay clase.
+  -- Ademas, por clase: indice_siguiente / nro_indice_siguiente (el siguiente al ultimo
+  -- desarrollado), indices_desarrollados e indices_total del manual.
   PROCEDURE mi_agenda(p_token IN VARCHAR2);
 
 END PKG_AGENDA_APP_ETHOS;
 /
 
 CREATE OR REPLACE PACKAGE BODY PKG_AGENDA_APP_ETHOS AS
+
+-- TRANSLATE de la pagina 2 (LOV de P2_ID_INDICE) para comparar el manual.
+-- (Las constantes van antes que cualquier procedimiento del body.)
+c_con_tildes CONSTANT VARCHAR2(64) :=
+    UNISTR('\00C1\00C9\00CD\00D3\00DA\00D1\00C0\00C8\00CC\00D2\00D9\00C4\00CB\00CF\00D6\00DC');
+c_sin_tildes CONSTANT VARCHAR2(64) := 'AEIOUNAEOUAEIOU';
 
 -- Los encabezados CORS los pone ORDS: no repetirlos.
 PROCEDURE abrir_json IS
@@ -57,9 +65,54 @@ BEGIN
     APEX_JSON.CLOSE_OBJECT;
 END p_error;
 
+-- Indice siguiente al ULTIMO desarrollado (SI_NO = 'Si') en la postulacion, dentro
+-- de su manual. Sin ninguno desarrollado: el primero del manual. Si ya se desarrollo
+-- el ultimo, o_titulo queda NULL (manual completado).
+PROCEDURE indice_siguiente(
+    p_id_postulacion IN  NUMBER,
+    p_manual         IN  VARCHAR2,
+    o_titulo         OUT VARCHAR2,
+    o_nro            OUT NUMBER,
+    o_desarrollados  OUT NUMBER,
+    o_total          OUT NUMBER)
+IS
+    l_ultimo NUMBER;
+BEGIN
+    o_titulo := NULL; o_nro := NULL; o_desarrollados := 0; o_total := 0;
+    IF p_manual IS NULL THEN RETURN; END IF;
+
+    SELECT COUNT(*) INTO o_total
+      FROM INDICES_MANUALES im
+     WHERE TRANSLATE(UPPER(im.MANUAL), c_con_tildes, c_sin_tildes) = p_manual;
+
+    SELECT MAX(im.NRO_INDICE), COUNT(DISTINCT im.ID_INDICE)
+      INTO l_ultimo, o_desarrollados
+      FROM INTERVENCIONES i, INDICES_MANUALES im
+     WHERE i.ID_POSTULACION = p_id_postulacion
+       AND NVL(i.SI_NO, 'No') = 'Si'
+       AND im.ID_INDICE = i.ID_INDICE
+       AND TRANSLATE(UPPER(im.MANUAL), c_con_tildes, c_sin_tildes) = p_manual;
+
+    BEGIN
+        SELECT im.TITULO, im.NRO_INDICE
+          INTO o_titulo, o_nro
+          FROM INDICES_MANUALES im
+         WHERE TRANSLATE(UPPER(im.MANUAL), c_con_tildes, c_sin_tildes) = p_manual
+           AND (l_ultimo IS NULL OR im.NRO_INDICE > l_ultimo)
+         ORDER BY im.NRO_INDICE ASC
+         FETCH FIRST 1 ROWS ONLY;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN o_titulo := NULL; o_nro := NULL;
+    END;
+END indice_siguiente;
+
 PROCEDURE mi_agenda(p_token IN VARCHAR2) IS
     l_usuario VARCHAR2(255);
     l_fac     NUMBER;
+    l_titulo  VARCHAR2(500);
+    l_nro     NUMBER;
+    l_hechos  NUMBER;
+    l_total   NUMBER;
 BEGIN
     -- :APP_USER de la pagina = usuario del token.
     l_usuario := PKG_AUTH_ETHOS.validar_token(p_token);
@@ -115,6 +168,12 @@ BEGIN
         APEX_JSON.WRITE('anio',               r.ANIO,      p_write_null => TRUE);
         APEX_JSON.WRITE('departamento',       r.DEPARTAMENTO, p_write_null => TRUE);
         APEX_JSON.WRITE('ciudad',             r.CIUDAD,    p_write_null => TRUE);
+
+        indice_siguiente(r.ID_POSTULACION, r.MANUAL, l_titulo, l_nro, l_hechos, l_total);
+        APEX_JSON.WRITE('indice_siguiente',      l_titulo, p_write_null => TRUE);
+        APEX_JSON.WRITE('nro_indice_siguiente',  l_nro,    p_write_null => TRUE);
+        APEX_JSON.WRITE('indices_desarrollados', l_hechos);
+        APEX_JSON.WRITE('indices_total',         l_total);
         APEX_JSON.CLOSE_OBJECT;
     END LOOP;
 

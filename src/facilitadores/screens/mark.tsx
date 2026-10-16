@@ -293,11 +293,6 @@ export function MarkScreen() {
               elegirInstitucion(v as number);
             }}
           />
-          {!d.instituciones.length && (
-            <Text size={11} color={colors.mutedForeground} style={{ marginTop: 6, lineHeight: 16 }}>
-              Igual que en APEX, solo aparecen las instituciones activas del año lectivo actual donde no registraste una intervención en los últimos 7 días.
-            </Text>
-          )}
         </Campo>
         <Campo etiqueta="Horario" requerido error={errores.id_postulacion} cargando={cargando.horarios}>
           <Chips

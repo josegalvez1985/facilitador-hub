@@ -47,6 +47,14 @@
       ],
       "expo-secure-store",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Facilitadores usa tus fotos para que elijas tu foto de perfil.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "Facilitadores usa tu ubicación para registrar dónde marcás cada intervención."

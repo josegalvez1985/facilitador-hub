@@ -53,7 +53,9 @@ CREATE OR REPLACE PACKAGE PKG_INTERVENCIONES_APP_ETHOS AS
                     p_grado IN VARCHAR2, p_turno IN NUMBER);
 
   -- KPI "Marcaciones del mes" de la app: intervenciones del facilitador del token
-  -- en el mes actual. { success, data:{ es_facilitador, del_mes, desarrolladas_del_mes, mes } }
+  -- en el mes actual, mas los KPIs Instituciones y Materiales desarrollados.
+  -- { success, data:{ es_facilitador, del_mes, desarrolladas_del_mes, mes, instituciones,
+  --   indices_desarrollados, manuales_desarrollados } }
   PROCEDURE resumen(p_token IN VARCHAR2);
 
   -- "Actividad reciente" de Inicio: ultimas intervenciones del facilitador del token.
@@ -413,6 +415,9 @@ PROCEDURE resumen(p_token IN VARCHAR2) IS
     -- FECHA_HORA se guarda en hora de Paraguay (TRG_INTERVENCIONES_SET_FECHA:
     -- SYSDATE - 3/24): el "mes actual" se calcula con el mismo corrimiento.
     l_desde   DATE := TRUNC(SYSDATE - (3/24), 'MM');
+    l_inst    NUMBER := 0;
+    l_idx     NUMBER := 0;
+    l_man     NUMBER := 0;
 BEGIN
     IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
     IF l_fac IS NOT NULL THEN
@@ -422,6 +427,27 @@ BEGIN
          WHERE id_facilitador = l_fac
            AND fecha_hora >= l_desde
            AND fecha_hora < ADD_MONTHS(l_desde, 1);
+
+        -- KPI "Instituciones": distintas en sus postulaciones del año lectivo actual.
+        SELECT COUNT(DISTINCT p.ID_INSTITUCION) INTO l_inst
+          FROM POSTULACIONES p
+         WHERE p.ID_FACILITADOR = l_fac
+           AND p.ANIO = FN_ANIO_LECTIVO_ACTUAL();
+
+        -- KPI "Materiales desarrollados" (hasta la fecha):
+        -- indices desarrollados (sin repetir indice dentro de la misma postulacion)...
+        SELECT COUNT(*) INTO l_idx
+          FROM (SELECT DISTINCT i.ID_POSTULACION, i.ID_INDICE
+                  FROM INTERVENCIONES i
+                 WHERE i.ID_FACILITADOR = l_fac
+                   AND NVL(i.SI_NO, 'No') = 'Si');
+
+        -- ...y manuales completos: TRG_INTERV_FINALIZA_POST pone la postulacion en
+        -- 'Finalizado' cuando se desarrolla el ultimo indice del manual.
+        SELECT COUNT(*) INTO l_man
+          FROM POSTULACIONES p
+         WHERE p.ID_FACILITADOR = l_fac
+           AND p.ESTADO = 'Finalizado';
     END IF;
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
@@ -431,6 +457,9 @@ BEGIN
     APEX_JSON.WRITE('del_mes', l_total);
     APEX_JSON.WRITE('desarrolladas_del_mes', l_si);
     APEX_JSON.WRITE('mes', TO_CHAR(l_desde, 'YYYY-MM'));
+    APEX_JSON.WRITE('instituciones', l_inst);
+    APEX_JSON.WRITE('indices_desarrollados', l_idx);
+    APEX_JSON.WRITE('manuales_desarrollados', l_man);
     APEX_JSON.CLOSE_OBJECT;
     APEX_JSON.CLOSE_OBJECT;
 EXCEPTION

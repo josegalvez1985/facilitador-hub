@@ -1,40 +1,75 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Building2, Check, LogOut, MapPin, Moon, Palette, Smartphone, Sun, SunMoon, type LucideIcon } from 'lucide-react-native';
+import { Building2, Camera, Check, Lock, LogOut, MapPin, Moon, Palette, Smartphone, Sun, SunMoon, Trash2, type LucideIcon } from 'lucide-react-native';
 
 import { useSession } from '../auth/session';
-import { demoUser, iniciales, institutions } from '../data';
+import { iniciales, institutions } from '../data';
+import { elegirFoto } from '../foto-perfil';
 import { useApp } from '../provider';
 import { useLayout } from '../shell';
+import { useToast } from '../toast';
 import { palettes, radius, themes } from '../theme';
 import { makeStyles, useTheme, type AppearanceMode } from '../theme-provider';
-import { Avatar, Badge, Button, Card, Field, Notice, PageTitle, Text } from '../ui';
+import { Avatar, Badge, Button, Card, PageTitle, Text } from '../ui';
 
 export function ProfileScreen() {
   const app = useApp();
   const { colors } = useTheme();
   const s = useStyles();
   const { desktop } = useLayout();
-  const [name, setName] = useState(app.name);
   const { sesion, logout } = useSession();
-  const [email, setEmail] = useState(sesion?.email || demoUser.email);
-  const [phone, setPhone] = useState('');
-  const [city, setCity] = useState(demoUser.city);
-  const [saved, setSaved] = useState(false);
+  const toast = useToast();
+  const [cargandoFoto, setCargandoFoto] = useState(false);
   const fieldStyle = desktop ? s.half : s.full;
 
-  const save = () => {
-    if (!name.trim()) return;
-    app.setName(name.trim());
-    setSaved(true);
-  };
+  // La galería se abre directo desde el toque: en la PWA el navegador lo exige.
+  async function cambiarFoto() {
+    setCargandoFoto(true);
+    try {
+      const uri = await elegirFoto();
+      if (uri) {
+        await app.setFoto(uri);
+        toast.success('Foto actualizada', { description: 'Queda guardada solo en este dispositivo.' });
+      }
+    } catch (e) {
+      toast.error('No se pudo cargar la foto', { description: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setCargandoFoto(false);
+    }
+  }
+
+  async function quitarFoto() {
+    try {
+      await app.setFoto(null);
+    } catch (e) {
+      toast.error('No se pudo quitar la foto', { description: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  // Solo lectura: son los datos del usuario logueado (login de ethos), no se editan desde la app.
+  const datos = [
+    { label: 'Nombre completo', valor: sesion?.nombre || app.name },
+    { label: 'Usuario', valor: sesion?.usuario ?? '' },
+    { label: 'Correo electrónico', valor: sesion?.email ?? '' },
+  ];
 
   return (
     <>
       <View style={{ maxWidth: 730 }}>
         <PageTitle title="Mi perfil" subtitle="Tu información y tu comunidad educativa." />
         <View style={[s.banner, { paddingTop: desktop ? 4 : 0 }]}>
-          <Avatar initials={iniciales(app.name)} size={76} />
+          <Pressable
+            onPress={() => void cambiarFoto()}
+            disabled={cargandoFoto}
+            accessibilityRole="button"
+            accessibilityLabel={app.foto ? 'Cambiar foto de perfil' : 'Cargar foto de perfil'}
+            style={({ pressed }) => pressed && { opacity: 0.8 }}
+          >
+            <Avatar initials={iniciales(app.name)} uri={app.foto} size={76} />
+            <View style={s.camara} pointerEvents="none">
+              <Camera size={13} color={colors.primaryForeground} />
+            </View>
+          </Pressable>
           <View style={{ flex: 1 }}>
             <Text weight="bold" size={20}>
               {app.name}
@@ -43,28 +78,43 @@ export function ProfileScreen() {
               Facilitadora educativa
             </Text>
             <Badge tone="success" icon={Check} label="Perfil activo" style={{ marginTop: 12 }} />
+            <View style={[s.row, { marginTop: 12, flexWrap: 'wrap' }]}>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={Camera}
+                label={cargandoFoto ? 'Cargando…' : app.foto ? 'Cambiar foto' : 'Cargar foto'}
+                onPress={() => void cambiarFoto()}
+                disabled={cargandoFoto}
+              />
+              {app.foto && <Button variant="ghost" size="sm" icon={Trash2} label="Quitar" onPress={() => void quitarFoto()} disabled={cargandoFoto} />}
+            </View>
           </View>
         </View>
 
-        <Text weight="bold" size={16} style={{ marginBottom: 22 }}>
-          Información personal
+        <View style={[s.row, { marginBottom: 6 }]}>
+          <Text weight="bold" size={16}>
+            Información personal
+          </Text>
+          <Lock size={14} color={colors.mutedForeground} />
+        </View>
+        <Text size={12} color={colors.mutedForeground} style={{ marginBottom: 18 }}>
+          Son los datos de tu usuario. Para corregirlos, pedíselo a tu coordinador.
         </Text>
         <View style={s.grid}>
-          <View style={fieldStyle}>
-            <Field label="Nombre completo" value={name} onChangeText={(v) => { setName(v); setSaved(false); }} autoComplete="name" />
-          </View>
-          <View style={fieldStyle}>
-            <Field label="Correo electrónico" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" />
-          </View>
-          <View style={fieldStyle}>
-            <Field label="Teléfono" value={phone} onChangeText={setPhone} placeholder="Tu número de teléfono" keyboardType="phone-pad" autoComplete="tel" />
-          </View>
-          <View style={fieldStyle}>
-            <Field label="Ciudad" value={city} onChangeText={setCity} />
-          </View>
+          {datos.map((d) => (
+            <View key={d.label} style={[fieldStyle, s.dato]} accessibilityLabel={`${d.label}: ${d.valor || 'sin dato'}`}>
+              <Text weight="semibold" size={12} style={{ marginBottom: 8 }}>
+                {d.label}
+              </Text>
+              <View style={s.valor}>
+                <Text size={14} color={d.valor ? colors.foreground : colors.mutedForeground} selectable>
+                  {d.valor || '—'}
+                </Text>
+              </View>
+            </View>
+          ))}
         </View>
-        <Button icon={Check} label="Guardar cambios" onPress={save} disabled={!name.trim()} style={{ alignSelf: 'flex-start' }} />
-        {saved && <Notice>Cambios guardados en esta demostración.</Notice>}
 
         <Appearance />
 
@@ -192,11 +242,14 @@ function Appearance() {
 
 const useStyles = makeStyles((c) =>
   StyleSheet.create({
+    camara: { position: 'absolute', right: 0, bottom: 0, width: 26, height: 26, borderRadius: 13, backgroundColor: c.primary, borderWidth: 2, borderColor: c.background, alignItems: 'center', justifyContent: 'center' },
     banner: { flexDirection: 'row', alignItems: 'center', gap: 18, paddingBottom: 28, marginBottom: 25, borderBottomWidth: 1, borderBottomColor: c.border },
     grid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 20 },
     half: { width: '48%', flexGrow: 1 },
     full: { width: '100%' },
     row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    dato: { marginBottom: 18 },
+    valor: { minHeight: 46, justifyContent: 'center', paddingHorizontal: 12, borderRadius: radius.md, backgroundColor: c.muted },
     labelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
     segmented: { flexDirection: 'row', gap: 4, padding: 4, backgroundColor: c.muted, borderRadius: radius.lg },
     segment: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 40, borderRadius: radius.md },

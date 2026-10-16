@@ -118,12 +118,67 @@ export async function cargarIndices(p: { idPostulacion: number; manual: string; 
   };
 }
 
-export type Resumen = { esFacilitador: boolean; delMes: number; desarrolladasDelMes: number };
+export type Resumen = {
+  esFacilitador: boolean;
+  /** Marcaciones del mes actual y cuántas fueron "Si". */
+  delMes: number;
+  desarrolladasDelMes: number;
+  /** Instituciones distintas en sus postulaciones del año lectivo actual. */
+  instituciones: number;
+  /** Índices desarrollados hasta la fecha y manuales completos (postulaciones 'Finalizado'). */
+  indicesDesarrollados: number;
+  manualesDesarrollados: number;
+};
 
-/** KPI "Marcaciones del mes": intervenciones del facilitador del token en el mes actual. */
+/** KPIs de Inicio del facilitador del token (GET mis-intervenciones/resumen). */
 export async function cargarResumen(): Promise<Resumen> {
   const d = data(await authFetch('mis-intervenciones/resumen'));
-  return { esFacilitador: d.es_facilitador !== false, delMes: Number(d.del_mes) || 0, desarrolladasDelMes: Number(d.desarrolladas_del_mes) || 0 };
+  const n = (v: unknown) => Number(v) || 0;
+  return {
+    esFacilitador: d.es_facilitador !== false,
+    delMes: n(d.del_mes),
+    desarrolladasDelMes: n(d.desarrolladas_del_mes),
+    instituciones: n(d.instituciones),
+    indicesDesarrollados: n(d.indices_desarrollados),
+    manualesDesarrollados: n(d.manuales_desarrollados),
+  };
+}
+
+export type IntervencionReciente = {
+  id: number;
+  fecha: Date | null;
+  siNo: string | null;
+  motivo: string | null;
+  manual: string | null;
+  indice: string | null;
+  institucion: string | null;
+  grado: string | null;
+  seccion: string | null;
+};
+
+/** "2026-10-16T08:30:00" (hora de Paraguay, como la guarda el trigger) → Date local. */
+function leerFechaHora(v: unknown): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(v ?? ''));
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])) : null;
+}
+
+/** "Actividad reciente": últimas intervenciones del facilitador del token. */
+export async function cargarRecientes(limite = 5): Promise<IntervencionReciente[]> {
+  const r = await authFetch(`mis-intervenciones/recientes?limite=${limite}`);
+  return lista((r as { data?: unknown }).data).map((x) => {
+    const f = x as Json;
+    return {
+      id: Number(f.id_intervencion),
+      fecha: leerFechaHora(f.fecha_hora),
+      siNo: txt(f.si_no),
+      motivo: txt(f.motivo_desarrollo),
+      manual: txt(f.manual),
+      indice: txt(f.indice),
+      institucion: txt(f.institucion),
+      grado: txt(f.grado),
+      seccion: txt(f.seccion),
+    };
+  });
 }
 
 export async function guardarIntervencion(datos: NuevaIntervencion): Promise<number | null> {
@@ -176,13 +231,17 @@ export function validar(f: Formulario, ubicacion: { requerida: boolean; lista: b
   return e;
 }
 
-/** Colores de los manuales, como en las acciones dinámicas "Nuevo" / "Nuevo_1" de la página. */
+/**
+ * Colores de los manuales del sistema APEX (tabla de colores de los manuales, acciones
+ * dinámicas "Nuevo" / "Nuevo_1" de la página 2). Única fuente de verdad: todas las
+ * pantallas (Marcar, Mi agenda, línea de tiempo, Mis materiales) usan esta constante.
+ */
 export const COLOR_MANUAL: Record<string, string> = {
-  SER: '#dc2626',
-  HACER: '#16a34a',
-  TENER: '#7c3aed',
-  CARACTER: '#6b7280',
-  VISION: '#eab308',
-  CORAJE: '#2563eb',
-  LIDERAZGO: '#dc2626',
+  SER: '#e74c3c', // rojo
+  HACER: '#27ae60', // verde
+  TENER: '#c39bd3', // lila
+  CARACTER: '#a6a6a6', // gris
+  VISION: '#f9e54e', // amarillo
+  CORAJE: '#3498db', // celeste
+  LIDERAZGO: '#e74c3c', // rojo
 };

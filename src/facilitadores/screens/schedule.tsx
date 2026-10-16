@@ -5,19 +5,17 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { CalendarDays, Plus, RefreshCw } from 'lucide-react-native';
+import { CalendarDays, RefreshCw } from 'lucide-react-native';
 
 import { cargarAgenda, clasesDelDia, diaAgenda, type Agenda } from '../agenda';
 import { useSession } from '../auth/session';
 import { ClaseCard } from '../clase-agenda';
-import { grades } from '../data';
+import { LineaDeTiempo } from '../linea-tiempo';
 import { diaYMes, hoy, semanaDe } from '../fechas';
-import { Grade, SchoolLine } from '../lesson-card';
 import { radius } from '../theme';
 import { makeStyles, useTheme } from '../theme-provider';
-import { Badge, Button, Card, Field, Modal, ModalActions, ModalText, PageTitle, SectionHeading, Text } from '../ui';
+import { Button, Card, PageTitle, SectionHeading, Text } from '../ui';
 
-type ExtraLesson = { title: string; grade: string; time: string };
 type Estado = { tipo: 'cargando' } | { tipo: 'error'; mensaje: string } | { tipo: 'listo'; agenda: Agenda };
 type Resultado = { clave: string } & Exclude<Estado, { tipo: 'cargando' }>;
 
@@ -30,9 +28,7 @@ export function ScheduleScreen() {
   // Semana ACTUAL (lunes a domingo), con hoy seleccionado.
   const [semana] = useState(() => semanaDe(hoy()));
   const [day, setDay] = useState(() => semana.find((d) => d.esHoy)?.clave ?? semana[0]?.clave ?? '');
-  const [vista, setVista] = useState<'dia' | 'semana'>('dia');
-  const [open, setOpen] = useState(false);
-  const [extra, setExtra] = useState<ExtraLesson[]>([]);
+  const [vista, setVista] = useState<'dia' | 'tiempo' | 'semana'>('dia');
   const current = semana.find((d) => d.clave === day) ?? semana[0];
 
   // Sin ID_FACILITADOR no se piden datos (aislamiento entre facilitadores).
@@ -101,7 +97,11 @@ export function ScheduleScreen() {
           </Text>
         </SectionHeading>
         {delDia.length ? (
-          delDia.map((c) => <ClaseCard key={c.idPostulacion} clase={c} horario={c.horario} esHoy={!!current?.esHoy} />)
+          vista === 'tiempo' ? (
+            <LineaDeTiempo clases={delDia} esHoy={!!current?.esHoy} />
+          ) : (
+            delDia.map((c) => <ClaseCard key={c.idPostulacion} clase={c} horario={c.horario} esHoy={!!current?.esHoy} />)
+          )
         ) : (
           <Vacio texto="No hay clases programadas para este día." />
         )}
@@ -111,15 +111,14 @@ export function ScheduleScreen() {
 
   return (
     <>
-      <PageTitle title="Mis horarios" subtitle="Tu semana, organizada para enseñar.">
-        <Button size="sm" icon={Plus} label="Añadir clase" onPress={() => setOpen(true)} />
-      </PageTitle>
+      <PageTitle title="Mi agenda" subtitle="Tu semana, organizada para enseñar." />
 
       <View style={s.segmento} accessibilityRole="tablist">
         {(
           [
             ['dia', 'Por día'],
-            ['semana', 'Semana completa'],
+            ['tiempo', 'Línea de tiempo'],
+            ['semana', 'Semana'],
           ] as const
         ).map(([v, l]) => (
           <Pressable key={v} accessibilityRole="tab" accessibilityState={{ selected: vista === v }} onPress={() => setVista(v)} style={[s.segmentoOp, vista === v && s.segmentoActivo]}>
@@ -130,7 +129,7 @@ export function ScheduleScreen() {
         ))}
       </View>
 
-      {vista === 'dia' && (
+      {vista !== 'semana' && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.days} style={{ marginBottom: 22, flexGrow: 0 }}>
           {semana.map((d) => {
             const active = day === d.clave;
@@ -162,21 +161,6 @@ export function ScheduleScreen() {
       )}
 
       {contenido}
-
-      {extra.map((l, i) => (
-        <Card key={i} style={{ marginBottom: 12 }}>
-          <Badge tone="success" label="Nueva clase · Demostración" style={{ marginBottom: 12 }} />
-          <Text weight="bold" style={{ marginBottom: 8 }}>
-            {l.title}
-          </Text>
-          <SchoolLine label="Escuela Básica San José" />
-          <View style={{ flexDirection: 'row', marginTop: 14 }}>
-            <Grade label={`${l.grade} · ${l.time}`} />
-          </View>
-        </Card>
-      ))}
-
-      <AddLessonModal visible={open} onClose={() => setOpen(false)} onAdd={(l) => setExtra([...extra, l])} />
     </>
   );
 }
@@ -191,41 +175,6 @@ function Vacio({ texto }: { texto: string }) {
         {texto}
       </Text>
     </View>
-  );
-}
-
-function AddLessonModal({ visible, onClose, onAdd }: { visible: boolean; onClose: () => void; onAdd: (l: ExtraLesson) => void }) {
-  const s = useStyles();
-  const [title, setTitle] = useState('');
-  const [grade, setGrade] = useState(grades[1] ?? '');
-  const [time, setTime] = useState('08:00');
-  const valid = title.trim().length > 0 && /^\d{2}:\d{2}$/.test(time);
-
-  const submit = () => {
-    if (!valid) return;
-    onAdd({ title: title.trim(), grade, time });
-    setTitle('');
-    onClose();
-  };
-
-  return (
-    <Modal visible={visible} onClose={onClose} title="Añadir clase" closeLabel="Cancelar">
-      <Field label="Nombre de la clase" value={title} onChangeText={setTitle} placeholder="Ej. Matemática · Geometría" onSubmitEditing={submit} autoFocus />
-      <Text weight="semibold" size={12} style={{ marginBottom: 8 }}>
-        Grado
-      </Text>
-      <View style={s.chips}>
-        {grades.map((g) => (
-          <Button key={g} size="sm" variant={grade === g ? 'default' : 'outline'} label={g} onPress={() => setGrade(g)} />
-        ))}
-      </View>
-      <Field label="Horario" value={time} onChangeText={setTime} placeholder="HH:MM" keyboardType="numbers-and-punctuation" maxLength={5} />
-      <ModalText>Se añadirá a la agenda de demostración.</ModalText>
-      <ModalActions>
-        <Button variant="outline" label="Cancelar" onPress={onClose} />
-        <Button label="Añadir clase" onPress={submit} disabled={!valid} />
-      </ModalActions>
-    </Modal>
   );
 }
 
@@ -246,7 +195,6 @@ const useStyles = makeStyles((colors) =>
     },
     contador: { minWidth: 16, height: 14, paddingHorizontal: 4, borderRadius: 7, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
     empty: { paddingVertical: 56, alignItems: 'center', gap: 16 },
-    chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 },
     segmento: { flexDirection: 'row', gap: 4, padding: 4, backgroundColor: colors.muted, borderRadius: radius.lg, marginBottom: 16 },
     segmentoOp: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 38, borderRadius: radius.md },
     segmentoActivo: { backgroundColor: colors.card, ...colors.shadow },

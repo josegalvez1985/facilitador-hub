@@ -1,8 +1,8 @@
 import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Building2, Clock3, MapPin, UserRound } from 'lucide-react-native';
+import { BookOpenCheck, Building2, CircleCheck, Clock3, MapPin, UserRound } from 'lucide-react-native';
 
-import { DIAS_AGENDA, type ClaseAgenda, type DiaAgenda, type Horario } from './agenda';
+import { DIAS_AGENDA, manualCompleto, type ClaseAgenda, type DiaAgenda, type Horario } from './agenda';
 import { COLOR_MANUAL } from './intervenciones';
 import { Grade } from './lesson-card';
 import { makeStyles, useTheme } from './theme-provider';
@@ -68,6 +68,8 @@ export function ClaseCard({ clase, horario, esHoy }: { clase: ClaseAgenda; horar
         </View>
       )}
 
+      <IndiceManual clase={clase} color={color} />
+
       <View style={s.claseFooter}>
         <View style={[s.fila, { flex: 1, flexWrap: 'wrap' }]}>
           {clase.manual && (
@@ -86,8 +88,43 @@ export function ClaseCard({ clase, horario, esHoy }: { clase: ClaseAgenda; horar
   );
 }
 
-const useStyles = makeStyles(() =>
+/** Siguiente índice al último desarrollado, con el avance del manual. */
+export function IndiceManual({ clase, color, compacto }: { clase: ClaseAgenda; color: string; compacto?: boolean }) {
+  const { colors } = useTheme();
+  const s = useStyles();
+  if (!clase.manual || clase.indicesTotal === 0) return null;
+  const completo = manualCompleto(clase);
+  const avance = Math.min(1, clase.indicesDesarrollados / clase.indicesTotal);
+  return (
+    <View style={[s.indice, compacto && { marginTop: 6, padding: 0, backgroundColor: 'transparent' }]}>
+      <View style={s.fila}>
+        {completo ? <CircleCheck size={14} color={colors.success} /> : <BookOpenCheck size={14} color={colors.primaryText} />}
+        <Text size={11} color={colors.mutedForeground}>
+          {completo ? 'Manual completado' : 'Próximo índice'}
+        </Text>
+        <Text size={11} color={colors.mutedForeground} style={{ marginLeft: 'auto' }}>
+          {clase.indicesDesarrollados} de {clase.indicesTotal}
+        </Text>
+      </View>
+      {!completo && clase.indiceSiguiente && (
+        <Text weight="semibold" size={compacto ? 12 : 13} numberOfLines={compacto ? 1 : 2} style={{ marginTop: 4 }}>
+          {clase.indiceSiguiente.titulo}
+        </Text>
+      )}
+      {!compacto && (
+        <View style={s.barra} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <View style={[s.barraFill, { width: `${avance * 100}%`, backgroundColor: completo ? colors.success : color }]} />
+        </View>
+      )}
+    </View>
+  );
+}
+
+const useStyles = makeStyles((c) =>
   StyleSheet.create({
+    indice: { marginTop: 12, padding: 10, borderRadius: 8, backgroundColor: c.muted },
+    barra: { height: 4, borderRadius: 2, backgroundColor: c.border, marginTop: 8, overflow: 'hidden' },
+    barraFill: { height: 4, borderRadius: 2 },
     clase: { marginBottom: 12, borderLeftWidth: 4 },
     claseTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
     fila: { flexDirection: 'row', alignItems: 'center', gap: 6 },

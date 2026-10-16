@@ -1,0 +1,165 @@
+# Genera el APK de Facilitadores en cada push a main o react-native.
+#
+# Los pasos son:
+#   1. npm ci + typecheck.
+#   2. expo prebuild: android/ no está en el repo (.gitignore), se genera en cada corrida.
+#   3. gradlew assembleRelease: el JS va empaquetado dentro del APK. Un assembleDebug
+#      de React Native NO sirve para instalar: busca el servidor de Metro al abrir.
+#
+# El APK se publica en el release `apk-latest` con el nombre `facilitadores.apk`.
+# Siempre el mismo tag y el mismo nombre a propósito: la URL de descarga queda
+# fija, el asset del commit anterior se reemplaza y el tag se mueve al commit
+# actual, así que nunca queda más de un APK publicado.
+#
+# "Immutable releases" (Settings > General > Releases) tiene que estar APAGADA:
+# con eso prendido GitHub no deja reemplazar el asset (403 "Resource not
+# accessible by integration") y el tag queda inutilizable para siempre.
+name: APK
+
+on:
+  push:
+    branches: [main, react-native]
+    # Documentación, backend y tests no viajan dentro del APK. El workflow SÍ
+    # cuenta: si cambia cómo se compila, corresponde compilar de nuevo.
+    paths-ignore:
+      - "**.md"
+      - "sql/**"
+      - "docs/**"
+      - "__tests__/**"
+  # Para generarlo a mano desde la pestaña Actions.
+  workflow_dispatch:
+
+# Un APK a la vez, para todas las ramas: dos pushes seguidos se pisarían al
+# publicar el release. Gana el último push.
+concurrency:
+  group: apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Para publicar el release: por defecto el token es de solo lectura.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 por su npm 11: package-lock.json está generado con npm 11.
+      # Si se baja la versión de Node, hay que regenerar el lock con ese npm.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      # JDK 17: el que piden Expo y React Native para compilar Android.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Cachea la distribución de Gradle y el build cache entre corridas.
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar tipos
+        run: npx tsc --noEmit
+
+      # versionCode único y creciente por corrida: Android rechaza instalar un
+      # APK con versionCode igual o menor al instalado. Solo cambia la copia de
+      # app.json de esta corrida, no el repo. La versión visible ("version")
+      # se sigue editando a mano en app.json.
+      - name: Fijar versionCode
+        run: |
+          node -e '
+            const fs = require("fs");
+            const app = JSON.parse(fs.readFileSync("app.json", "utf8"));
+            app.expo.android.versionCode = Number(process.env.GITHUB_RUN_NUMBER);
+            fs.writeFileSync("app.json", JSON.stringify(app, null, 2));
+            console.log("versionCode", app.expo.android.versionCode, "· version", app.expo.version);
+          '
+
+      # Genera android/ desde app.json (plugins, permisos, íconos). El .env del
+      # repo (EXPO_PUBLIC_API_URL) se lee al empaquetar el JS en el paso siguiente.
+      - name: Expo prebuild
+        env:
+          CI: "1"
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Compilar APK
+        env:
+          NODE_ENV: production
+        run: ./gradlew assembleRelease --stacktrace
+        working-directory: android
+
+      - name: Renombrar
+        run: cp android/app/build/outputs/apk/release/app-release.apk facilitadores.apk
+
+      # Con qué clave quedó firmado REALMENTE el APK, leído del archivo final.
+      # Es lo que decide si el teléfono acepta instalarlo encima del anterior:
+      # si cambia, Android responde "conflicto al actualizar" y obliga a
+      # desinstalar. Lo COMPARA y corta antes de publicar.
+      #
+      # Hoy es la clave de depuración de la plantilla de Expo
+      # (android/app/debug.keystore, alias androiddebugkey), la misma en cada
+      # prebuild. Si se pasa a una clave propia A PROPÓSITO, hay que actualizar
+      # este valor y todos van a tener que desinstalar una vez.
+      #
+      # apksigner y no keytool: el APK se firma con el esquema v2 y
+      # `keytool -printcert -jarfile` solo entiende el v1.
+      - name: Verificar la firma del APK
+        env:
+          FIRMA_ESPERADA: fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          CERTS=$("$APKSIGNER" verify --print-certs facilitadores.apk)
+          echo "$CERTS" | grep -iE "certificate DN|certificate SHA-256 digest"
+
+          # "certificate SHA-256", no "SHA-256" a secas: apksigner imprime
+          # además el digest de la clave pública, que es otro número.
+          FIRMA=$(echo "$CERTS" | grep -i "certificate SHA-256 digest" | head -1 | awk '{print $NF}')
+          if [ "$FIRMA" != "$FIRMA_ESPERADA" ]; then
+            echo "::error::El APK quedó firmado con $FIRMA y se esperaba $FIRMA_ESPERADA. Publicarlo obligaría a desinstalar la versión anterior para instalarlo. Revisá signingConfigs en el build.gradle que genera expo prebuild."
+            exit 1
+          fi
+          echo "Firma correcta: $FIRMA"
+
+      # Respaldo de corta vida por si falla la publicación. El APK que vale es
+      # el del release; este se descarga como ZIP y pide login.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: facilitadores-${{ github.run_number }}
+          path: facilitadores.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      # Reemplaza el APK del commit anterior por el de este: mueve el tag
+      # `apk-latest` al commit actual y pisa el asset `facilitadores.apk`
+      # (--clobber), así la URL de descarga no cambia y queda un solo APK.
+      #
+      # Si muere con 403 "Resource not accessible by integration": revisar que
+      # "Immutable releases" esté apagada y que Settings > Actions > General >
+      # Workflow permissions esté en "Read and write permissions".
+      - name: Publicar en el release apk-latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTAS="APK generado automáticamente.
+
+          Rama: ${GITHUB_REF_NAME}
+          Commit: ${GITHUB_SHA}
+          Corrida: #${GITHUB_RUN_NUMBER}
+          versionCode: ${GITHUB_RUN_NUMBER}"
+
+          git tag -f apk-latest "$GITHUB_SHA"
+          git push -f origin refs/tags/apk-latest
+
+          if gh release view apk-latest >/dev/null 2>&1; then
+            gh release upload apk-latest facilitadores.apk --clobber
+            gh release edit apk-latest --title "Último APK" --notes "$NOTAS" --latest
+          else
+            gh release create apk-latest facilitadores.apk --title "Último APK" --notes "$NOTAS" --latest
+          fi

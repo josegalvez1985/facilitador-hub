@@ -1,6 +1,10 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
+  AccessibilityInfo,
+  Animated,
+  Easing,
   Modal as RNModal,
+  Platform,
   Pressable,
   StyleSheet,
   Text as RNText,
@@ -13,9 +17,10 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { X, type LucideIcon } from 'lucide-react-native';
 
-import { fonts, radius, toneColors, type FontWeight, type Palette, type Tone } from './theme';
+import { alpha, fonts, radius, toneColors, type FontWeight, type Palette, type Tone } from './theme';
 import { makeStyles, useTheme } from './theme-provider';
 
 const logo = require('../../assets/images/logo.png');
@@ -128,13 +133,75 @@ export function Notice({ children }: { children: ReactNode }) {
   );
 }
 
-export function Avatar({ initials, size = 38 }: { initials: string; size?: number }) {
+/** Muestra la foto si hay `uri`; si no, las iniciales. */
+export function Avatar({ initials, uri, size = 38 }: { initials: string; uri?: string | null; size?: number }) {
   const { colors } = useTheme();
   return (
     <View style={[base.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: colors.secondary }]}>
-      <Text weight="bold" size={Math.round(size * 0.34)} color={colors.primaryText}>
-        {initials}
-      </Text>
+      {uri ? (
+        <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2 }} contentFit="cover" accessibilityLabel="Foto de perfil" />
+      ) : (
+        <Text weight="bold" size={Math.round(size * 0.34)} color={colors.primaryText}>
+          {initials}
+        </Text>
+      )}
+    </View>
+  );
+}
+
+/**
+ * Avatar con aureola: anillo degradé con los colores del tema que gira lento y un brillo suave
+ * que "respira". Con "reducir movimiento" activado queda quieto.
+ */
+export function AvatarAureola({ initials, uri, size = 56 }: { initials: string; uri?: string | null; size?: number }) {
+  const { colors } = useTheme();
+  const [giro] = useState(() => new Animated.Value(0));
+  const [brillo] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    let animaciones: Animated.CompositeAnimation[] = [];
+    let vigente = true;
+    const nativo = Platform.OS !== 'web';
+    AccessibilityInfo.isReduceMotionEnabled()
+      .catch(() => false)
+      .then((reducir) => {
+        if (!vigente || reducir) return;
+        animaciones = [
+          Animated.loop(Animated.timing(giro, { toValue: 1, duration: 9000, easing: Easing.linear, useNativeDriver: nativo })),
+          Animated.loop(
+            Animated.sequence([
+              Animated.timing(brillo, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: nativo }),
+              Animated.timing(brillo, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: nativo }),
+            ]),
+          ),
+        ];
+        animaciones.forEach((a) => a.start());
+      });
+    return () => {
+      vigente = false;
+      animaciones.forEach((a) => a.stop());
+    };
+  }, [giro, brillo]);
+
+  const anillo = Math.max(3, Math.round(size * 0.06));
+  const total = size + anillo * 4; // anillo + separación a cada lado
+  const circulo = { width: total, height: total, borderRadius: total / 2 };
+  const rotate = giro.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const opacity = brillo.interpolate({ inputRange: [0, 1], outputRange: [0.45, 1] });
+  const scale = brillo.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] });
+
+  return (
+    <View style={[circulo, base.avatar]}>
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, circulo, { backgroundColor: alpha(colors.primary, 0.18), boxShadow: `0 0 ${Math.round(size * 0.4)}px ${alpha(colors.primary, 0.55)}`, opacity, transform: [{ scale }] }]}
+      />
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, circulo, { overflow: 'hidden', transform: [{ rotate }] }]}>
+        <LinearGradient colors={[colors.primary, colors.accent, colors.success, colors.primary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      </Animated.View>
+      <View style={{ padding: anillo, borderRadius: total / 2, backgroundColor: colors.background }}>
+        <Avatar initials={initials} uri={uri} size={size} />
+      </View>
     </View>
   );
 }
@@ -220,17 +287,21 @@ export function SectionHeading({ title, children }: { title: ReactNode; children
   );
 }
 
-export function PageTitle({ title, subtitle, children }: { title: ReactNode; subtitle: string; children?: ReactNode }) {
+/** `leading`: algo a la izquierda del título (p. ej. la foto en el inicio). */
+export function PageTitle({ title, subtitle, leading, children }: { title: ReactNode; subtitle: string; leading?: ReactNode; children?: ReactNode }) {
   const { colors } = useTheme();
   return (
     <View style={base.welcomeRow}>
-      <View style={{ flexShrink: 1 }}>
-        <Text weight="bold" size={27} style={{ lineHeight: 36 }}>
-          {title}
-        </Text>
-        <Text size={13} color={colors.mutedForeground} style={{ marginTop: 6 }}>
-          {subtitle}
-        </Text>
+      <View style={base.titleRow}>
+        {leading}
+        <View style={{ flexShrink: 1 }}>
+          <Text weight="bold" size={27} style={{ lineHeight: 36 }}>
+            {title}
+          </Text>
+          <Text size={13} color={colors.mutedForeground} style={{ marginTop: 6 }}>
+            {subtitle}
+          </Text>
+        </View>
       </View>
       {children}
     </View>
@@ -253,6 +324,7 @@ const base = StyleSheet.create({
   modalActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-end', marginTop: 22 },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12 },
   welcomeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 16 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 14, flexShrink: 1 },
 });
 
 const useStyles = makeStyles((c) =>
