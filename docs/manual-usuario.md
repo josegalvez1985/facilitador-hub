@@ -66,6 +66,8 @@ Tocá **Marcar** y completá los 5 pasos. Al abrir, la app pide tu **ubicación*
 
 Revisá el resumen, tocá **Guardar intervención** y confirmá.
 
+> La ubicación se ajusta sola mientras completás los datos: no tenés que hacer nada. Solo mantené el GPS activado.
+
 ### ¿Por qué no aparece mi institución u horario?
 
 - Solo aparecen las clases que tenés **hoy** según tu agenda.

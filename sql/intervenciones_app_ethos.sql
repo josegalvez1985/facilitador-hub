@@ -341,7 +341,9 @@ BEGIN
     END LOOP;
     APEX_JSON.CLOSE_ARRAY;
 
-    APEX_JSON.WRITE('requiere_ubicacion', NVL(l_ind_ubic, 'SI') <> 'NO');
+    -- 'N', 'No' o 'NO' (empieza con N, sin distinguir mayusculas): la pagina 2 usa 'N' y 'No',
+    -- y TRG_INTERV_UBICACION 'NO'. Vacio = requiere, como en APEX.
+    APEX_JSON.WRITE('requiere_ubicacion', UPPER(SUBSTR(TRIM(NVL(l_ind_ubic, 'SI')), 1, 1)) <> 'N');
     APEX_JSON.CLOSE_OBJECT;
     APEX_JSON.CLOSE_OBJECT;
 EXCEPTION
@@ -821,17 +823,19 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Ubicacion: LATITUD/LONGITUD son NOT NULL. Con IND_UBICACION_POSTULACION = 'NO'
-    -- TRG_INTERV_UBICACION las pone en 0; si no, hacen falta las del dispositivo.
+    -- Ubicacion: LATITUD/LONGITUD son NOT NULL. Facilitador que no requiere ubicacion
+    -- (IND_UBICACION_POSTULACION 'N'/'No'/'NO', igual que en INICIO): se guarda 0, como la
+    -- validacion IND_UBICACION_POSTULACION de la pagina 2 (:P2_LATITUD := '0') y
+    -- TRG_INTERV_UBICACION. Si no, hacen falta las del dispositivo.
     BEGIN
         SELECT NVL(IND_UBICACION_POSTULACION, 'SI') INTO l_ind_ubic
           FROM FACILITADORES WHERE ID_FACILITADOR = l_fac;
     EXCEPTION
         WHEN OTHERS THEN l_ind_ubic := 'SI';
     END;
-    IF NVL(l_ind_ubic, 'SI') = 'NO' THEN
-        l_lat := NVL(l_lat, '0');
-        l_lon := NVL(l_lon, '0');
+    IF UPPER(SUBSTR(TRIM(NVL(l_ind_ubic, 'SI')), 1, 1)) = 'N' THEN
+        l_lat := '0';
+        l_lon := '0';
     ELSIF l_lat IS NULL OR l_lon IS NULL THEN
         p_error(400, 'Bad Request', UNISTR('No se pudo obtener tu ubicaci\00F3n. Activ\00E1 el GPS y permit\00ED el acceso a la ubicaci\00F3n.'), 'ubicacion');
         RETURN;

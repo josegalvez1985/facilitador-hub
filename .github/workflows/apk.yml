@@ -38,9 +38,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Una compilación normal tarda ~10-15 min (la primera, sin caché, algo más).
-    # Si pasa de esto, algo quedó colgado: mejor cortar que esperar 6 horas.
-    timeout-minutes: 45
+    # La primera corrida, sin caché, es la más lenta. Si pasa de esto, algo quedó
+    # colgado: mejor cortar que esperar 6 horas. (Con 45 min una corrida se cortó en
+    # minifyReleaseWithR8 con exit code 143 = SIGTERM.)
+    timeout-minutes: 75
 
     permissions:
       # Para publicar el release: por defecto el token es de solo lectura.
@@ -99,12 +100,16 @@ jobs:
       # - 6 GB para Gradle: con los 2 GB de la plantilla se la pasa liberando memoria.
       #   El runner de GitHub tiene 16 GB.
       # - Sin el lint de release (lintVital): no cambia el APK y suma minutos.
+      # - Sin R8 (minify): era el paso más lento y donde se cortó por tiempo. Solo achica
+      #   el código Java/Kotlin; la app (JS, ya optimizado por Hermes) no cambia. El APK
+      #   queda unos MB más grande.
       - name: Ajustar Gradle para CI
         run: |
           sed -i 's/^reactNativeArchitectures=.*/reactNativeArchitectures=armeabi-v7a,arm64-v8a/' android/gradle.properties
           sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8/' android/gradle.properties
+          sed -i 's/^android.enableMinifyInReleaseBuilds=.*/android.enableMinifyInReleaseBuilds=false/' android/gradle.properties
           sed -i 's/^android {$/android {\n    lint { checkReleaseBuilds false }/' android/app/build.gradle
-          grep -E "^(reactNativeArchitectures|org.gradle.jvmargs)=" android/gradle.properties
+          grep -E "^(reactNativeArchitectures|org.gradle.jvmargs|android.enableMinifyInReleaseBuilds)=" android/gradle.properties
           grep -n "checkReleaseBuilds" android/app/build.gradle
 
       - name: Compilar APK

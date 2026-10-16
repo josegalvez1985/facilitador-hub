@@ -230,6 +230,12 @@ El formulario respeta el orden, los selects y las validaciones de la página APE
 - **Cascada:** cada cambio recarga solo las listas que dependen de él. Las listas sin opción vacía toman la primera opción; la institución y el índice usan el valor por defecto de la página, sin cambios.
 - **Validaciones:** campos obligatorios; el motivo es obligatorio con "No" (`TRG_INTERV_SINO_MOTIVO`); la observación es obligatoria con "No" + "Otros" (validación `OBS`). El servidor vuelve a validar todo, incluido que cada valor esté en su lista y que la postulación sea del facilitador del token.
 - **Ubicación:** se pide al abrir, como `PosicionActual`. Es obligatoria salvo que `FACILITADORES.IND_UBICACION_POSTULACION = 'NO'`, en cuyo caso el trigger `TRG_INTERV_UBICACION` la guarda en 0.
+  - Es más exacta que en APEX, que no pedía alta precisión. Se usa el GPS a máxima precisión (`Accuracy.BestForNavigation`). En Android, si el GPS está apagado, ofrece activarlo.
+  - **Facilitadores que no requieren ubicación** (`IND_UBICACION_POSTULACION` = `N`, `No` o `NO`): la app no pide permiso ni enciende el GPS, y el servidor guarda latitud y longitud en 0, como la página 2.
+  - La posición se afina **en segundo plano** mientras el facilitador completa el formulario, sin mostrarle nada. Solo aparece un aviso si falta el permiso o el GPS.
+  - Se sigue escuchando hasta lograr ±5 m o hasta 3 minutos, quedándose siempre con la de menor error. Al guardar se envía la mejor obtenida hasta ese momento.
+  - Se descartan las posiciones viejas que el sistema tenía guardadas. Las coordenadas se envían con todos sus decimales y el backend las guarda sin redondear.
+  - Lógica en [src/facilitadores/ubicacion.ts](src/facilitadores/ubicacion.ts).
 - **Lo que pone la base:** `FECHA_HORA`, `ANIO`, `ID_AUDITORIA` y el cierre de la postulación los siguen cargando los triggers de `INTERVENCIONES`.
 - **Manuales:** se muestran con los colores de la página (SER rojo, HACER verde, TENER violeta…).
 

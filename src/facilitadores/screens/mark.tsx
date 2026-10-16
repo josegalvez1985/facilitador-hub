@@ -60,8 +60,6 @@ export function MarkScreen() {
   const s = useStyles();
   const router = useRouter();
   const toast = useToast();
-  const { ubicacion, reintentar: reintentarUbicacion } = useUbicacion();
-
   const [inicio, setInicio] = useState<EstadoInicio>({ tipo: 'cargando' });
   const [intentoInicio, setIntentoInicio] = useState(0);
   const [form, setForm] = useState<Formulario>(VACIO);
@@ -78,6 +76,10 @@ export function MarkScreen() {
   const pedido = useRef({ horarios: 0, clase: 0, indices: 0 });
 
   const requiereUbicacion = inicio.tipo === 'listo' ? inicio.datos.requiereUbicacion : true;
+  // El GPS se enciende recién cuando el servidor confirma que este facilitador necesita ubicación
+  // (FACILITADORES.IND_UBICACION_POSTULACION distinto de 'No'). A quien no la necesita no se le
+  // pide permiso ni se envían coordenadas: el servidor guarda 0, como APEX.
+  const { ubicacion, reintentar: reintentarUbicacion } = useUbicacion(inicio.tipo === 'listo' && inicio.datos.requiereUbicacion);
 
   /* ------------------------------- Cascada ------------------------------- */
 
