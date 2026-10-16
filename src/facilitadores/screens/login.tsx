@@ -136,7 +136,7 @@ export function LoginScreen() {
   if (!desktop) return <LoginCelular>{formulario}</LoginCelular>;
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[s.wrap, { flexDirection: 'row' }]}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'web' ? undefined : 'padding'} style={[s.wrap, { flexDirection: 'row' }]}>
       <View style={{ flex: 1 }}>
         <Image source={classroom} style={StyleSheet.absoluteFill} contentFit="cover" accessibilityLabel="Profesora y estudiantes compartiendo una clase" />
       </View>
@@ -183,7 +183,7 @@ function LoginCelular({ children }: { children: ReactNode }) {
   const translateY = entrada.interpolate({ inputRange: [0, 1], outputRange: [28, 0] });
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.wrap}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'web' ? undefined : 'padding'} style={s.wrap}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" bounces={false}>
         <View style={{ height: alturaFoto }}>
           <Image source={classroom} style={StyleSheet.absoluteFill} contentFit="cover" contentPosition={{ left: '62%', top: '45%' }} accessibilityLabel="Profesora y estudiantes compartiendo una clase" />

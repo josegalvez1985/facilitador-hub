@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 // Expo solo inyecta en el bundle las variables con prefijo EXPO_PUBLIC_, y las fija al
 // arrancar el servidor. Si llega vacía o con un valor de ejemplo ("<esquema>"), se usa
@@ -14,6 +15,16 @@ function url(path: string) {
 // En web evita respuestas cacheadas. En nativo se omite: el polyfill de fetch de
 // React Native agrega "?_=timestamp" a los GET cuando ve cache: 'no-store'.
 const noCache: RequestInit = Platform.OS === 'web' ? { cache: 'no-store' } : {};
+
+// IMPRESCINDIBLE EN EL APK. El filtro anti-bots de oracleapex.com (Akamai) deja colgada SIN
+// RESPUESTA cualquier llamada cuyo User-Agent contenga "okhttp", que es el que pone Android
+// por defecto: el APK mostraba "Sin conexión" aunque la red anduviera. Probado el 16/10/2026:
+// "okhttp/4.12.0" → sin respuesta a los 30 s; "Facilitadores/1.0.0 (Android)" → 200 en 3 s.
+// No incluir "okhttp" acá. En web el navegador no deja cambiarlo (y no hace falta).
+const IDENTIDAD: Record<string, string> =
+  Platform.OS === 'web' ? {} : { 'User-Agent': `Facilitadores/${Constants.expoConfig?.version ?? '1.0.0'} (${Platform.OS === 'ios' ? 'iOS' : 'Android'})` };
+
+const conIdentidad = (init: RequestInit): RequestInit => ({ ...init, headers: { ...IDENTIDAD, ...(init.headers as Record<string, string> | undefined) } });
 
 export type Sesion = {
   token: string;
@@ -58,7 +69,7 @@ export function esSinConexion(e: unknown): e is SinConexion {
 /** fetch solo rechaza por red, CORS o abort: un 4xx/5xx llega como respuesta. */
 async function pedir(input: string, init: RequestInit): Promise<Response> {
   try {
-    return await fetch(input, init);
+    return await fetch(input, conIdentidad(init));
   } catch {
     throw new SinConexion();
   }
@@ -123,11 +134,14 @@ export async function logout(): Promise<void> {
   const s = getSesion();
   if (s) {
     // Best-effort: si el server no responde, igual se limpia lo local.
-    await fetch(url('auth/logout'), {
-      ...noCache,
-      method: 'POST',
-      headers: { Authorization: `Bearer ${s.token}` },
-    }).catch(() => {});
+    await fetch(
+      url('auth/logout'),
+      conIdentidad({
+        ...noCache,
+        method: 'POST',
+        headers: { Authorization: `Bearer ${s.token}` },
+      }),
+    ).catch(() => {});
   }
   cerrarSesion();
 }

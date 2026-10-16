@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Modal as RNModal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { KeyboardAvoidingView, Modal as RNModal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePathname, useRouter, type Href } from 'expo-router';
 import { Bell, BookOpen, CalendarDays, ChevronRight, CircleHelp, ClipboardCheck, History, LayoutGrid, ListChecks, LogOut, MapPin, Menu, Plus, UserRound, X, type LucideIcon } from 'lucide-react-native';
@@ -148,6 +148,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           </View>
         </View>
 
+        {/* La app dibuja de borde a borde: Android ya no achica la ventana con el teclado.
+            Esto le resta su alto al área con scroll para que el campo enfocado quede visible. */}
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
         <ScrollView key={path} style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={[s.workspace, desktop ? { padding: wide ? 38 : 24, paddingTop: wide ? 32 : 28 } : { padding: 20, paddingTop: 24 }]}>
           {children}
           {desktop && (
@@ -161,6 +164,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </View>
           )}
         </ScrollView>
+        </KeyboardAvoidingView>
 
         {notifications && (
           <View style={[s.notificationPanel, { top: (desktop ? 84 : 64 + insets.top) - 6, right: desktop ? (wide ? 38 : 24) : 16 }]}>

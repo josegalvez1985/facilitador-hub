@@ -259,6 +259,7 @@ Cómo se porta una página:
 | Síntoma | Causa | Qué hacer |
 |---|---|---|
 | `ords/%3Cesquema%3E/...` o "blocked by CORS policy" en el navegador | El servidor de desarrollo sigue con una URL vieja, o la ruta no existe (404 sin encabezados CORS) | `npx expo start --clear`. ORDS ya maneja CORS: no hace falta configurarlo. |
+| APK: "Sin conexión con el servidor" aunque la web funcione en el mismo celular | El filtro anti-bots de oracleapex.com deja sin respuesta a las llamadas que se identifican como `okhttp`, que es el valor por defecto de Android | Ya está resuelto en `api.ts`, que manda `User-Agent: Facilitadores/<versión> (Android)`. Hace falta un APK generado después de ese cambio |
 | Evaluaciones: "Falta publicar en el backend el endpoint mi-facilitador" | No se corrió `sql/facilitador_app_ethos.sql` | Correrlo en APEX (ver [sql/README.md](sql/README.md)) |
 | Mi agenda: "Falta publicar en el backend el endpoint mi-agenda" | No se corrió `sql/agenda_app_ethos.sql` | Correrlo en APEX |
 | Historial / Editar: "Falta publicar en el backend los endpoints de historial-intervenciones" | No se corrió `sql/historial_app_ethos.sql` | Correrlo en APEX |
