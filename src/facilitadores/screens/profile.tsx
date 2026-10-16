@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Building2, Camera, Check, Lock, LogOut, MapPin, Moon, Palette, Smartphone, Sun, SunMoon, Trash2, type LucideIcon } from 'lucide-react-native';
 
 import { useSession } from '../auth/session';
+import { Ayuda } from '../ayuda';
 import { iniciales, institutions } from '../data';
 import { elegirFoto } from '../foto-perfil';
 import { useApp } from '../provider';
@@ -117,6 +118,8 @@ export function ProfileScreen() {
         </View>
 
         <Appearance />
+
+        <Ayuda />
 
         <Text weight="bold" size={16} style={{ marginTop: 38, marginBottom: 18 }}>
           Mis instituciones

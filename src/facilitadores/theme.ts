@@ -26,6 +26,19 @@ export type Palette = {
   heroTint: string;
   overlay: string;
   shadow: { boxShadow?: string };
+  /** Series de gráficos (barras de Inicio). Ver CHART abajo. */
+  chart: { total: string; si: string; no: string };
+};
+
+// Colores de series para gráficos: IGUALES en los 6 temas a propósito. Los colores de
+// cada tema no sirven como series: varios pares no se distinguen con daltonismo (y en
+// "Bosque" ni con visión normal). Esta terna (azul / aguamarina / naranja) pasa el
+// validador de la guía dataviz en ambos modos: separación CVD ΔE ≥ 9, visión normal ≥ 20.
+// En claro el aguamarina queda en 2,8:1 contra la tarjeta: por eso el gráfico muestra
+// siempre los valores como texto (lectura del día y vista de tabla).
+const CHART: Record<Scheme, Palette['chart']> = {
+  light: { total: '#2a78d6', si: '#1baf7a', no: '#eb6834' },
+  dark: { total: '#3987e5', si: '#199e70', no: '#d95926' },
 };
 
 type ThemeBase = { id: ThemeId; name: string; description: string; primary: string; success: string; accent: string };
@@ -107,6 +120,7 @@ function buildPalette(t: ThemeBase, scheme: Scheme): Palette {
     heroTint: scheme === 'light' ? mix(t.primary, '#ffffff', 0.86) : mix(t.primary, n.background, 0.8),
     overlay: scheme === 'light' ? 'rgba(16, 23, 31, 0.4)' : 'rgba(0, 0, 0, 0.6)',
     shadow: scheme === 'light' ? { boxShadow: '0 4px 20px rgba(33, 41, 54, 0.04)' } : {},
+    chart: CHART[scheme],
   };
 }
 

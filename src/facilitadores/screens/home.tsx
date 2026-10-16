@@ -9,6 +9,8 @@ import { cargarAgenda, clasesDelDia, diaAgenda } from '../agenda';
 import { iniciales } from '../data';
 import { useSession } from '../auth/session';
 import { ClaseCard } from '../clase-agenda';
+import { Cumpleanios } from '../cumpleanios';
+import { GraficoSemanal } from '../grafico-semanal';
 import { diaMesAbreviado, fechaCorta, hoy, mismoDia, nombreMes, sumarDias } from '../fechas';
 import { fraseDelDia } from '../frase-del-dia';
 import { cargarRecientes, cargarResumen, type Resumen } from '../intervenciones';
@@ -100,6 +102,12 @@ export function HomeScreen() {
           <Button size="sm" label="Ver mi agenda" iconRight={ArrowRight} onPress={() => router.navigate('/horarios')} style={{ alignSelf: 'flex-start' }} />
         </View>
       </View>
+
+      {/* Cumpleaños del día: solo aparece si alguien cumple hoy. */}
+      <Cumpleanios />
+
+      {/* Intervenciones por semana (Total / Sí / No por día), encima de los KPIs. */}
+      <GraficoSemanal />
 
       <View style={[s.stats, { gap: desktop ? (wide ? 16 : 10) : 12 }]}>
         {stats.map((st) => (

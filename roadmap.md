@@ -23,12 +23,15 @@
 - [x] Perfil: foto de perfil guardada en el dispositivo (por usuario), visible en Inicio, el menú lateral y el panel Menú.
 - [x] Inicio: foto con aureola animada en los colores del tema, junto al saludo.
 - [x] Barra superior sin avatar: solo título y campana.
+- [x] Manual de uso en Perfil → Ayuda (`docs/manual-usuario.md`, `npm run manual`).
 - [x] Campana de notificaciones: próxima clase e institución según la hora actual, con punto de "nueva" que se apaga al verla.
 
 ## Pendiente
 - [ ] Correr en APEX: `sql/historial_app_ethos.sql`, `sql/intervenciones_realizadas_app_ethos.sql`, `sql/agenda_app_ethos.sql`, `sql/materiales_app_ethos.sql` y de nuevo `sql/intervenciones_app_ethos.sql` (agrega el resumen ampliado y recientes); probar con TWALDE.
 - [ ] Marcar sin instituciones: causa encontrada. `V_INSTITUCIONES` compara el día con `TO_CHAR(..,'FMDAY')`, que en ORDS sale en inglés ("FRIDAY") y nunca coincide. Sin tocar APEX: volver a correr `sql/intervenciones_app_ethos.sql` (crea la copia `V_INSTITUCIONES_APP_ETHOS` y el paquete la usa) y probar con SALVADORAGB.
 - [ ] Reemplazar `sql/ords_modulo_ethos_export.sql` por la exportación completa.
+- [ ] Gráfico de intervenciones por semana: correr de nuevo `sql/intervenciones_app_ethos.sql` (publica `mis-intervenciones/por-dia`; deben quedar 8 de 8 handlers).
+- [ ] Cumpleaños en Inicio: correr de nuevo `sql/facilitador_app_ethos.sql` (publica `cumpleanios-hoy`) y confirmar con su salida los valores de `ACTIVO`.
 - [ ] Generar un APK nuevo para que la foto de perfil funcione en Android (`expo-image-picker` y `expo-image-manipulator` son módulos nativos). El workflow `APK` lo hace en el próximo push.
 - [ ] Probar la primera corrida del workflow `APK` en GitHub Actions y que el celular instale `facilitadores.apk`.
 - [ ] Portar las siguientes páginas de APEX (pasarme la exportación de cada una).

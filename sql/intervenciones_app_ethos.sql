@@ -14,6 +14,7 @@
 --        GET  mis-intervenciones/indices     LOV + default P2_ID_INDICE
 --        GET  mis-intervenciones/resumen     KPI "Marcaciones del mes" (Inicio)
 --        GET  mis-intervenciones/recientes   "Actividad reciente" (Inicio)
+--        GET  mis-intervenciones/por-dia     grafico semanal de Inicio (total / Si / No por dia)
 --        POST mis-intervenciones             validaciones + INSERT INTERVENCIONES
 --   3. Verificacion
 --
@@ -175,6 +176,12 @@ CREATE OR REPLACE PACKAGE PKG_INTERVENCIONES_APP_ETHOS AS
   -- { success, data:[ { id_intervencion, fecha_hora, si_no, motivo_desarrollo, manual,
   --   indice, institucion, grado, seccion } ] }
   PROCEDURE recientes(p_token IN VARCHAR2, p_limite IN NUMBER DEFAULT 5);
+
+  -- Grafico de Inicio: intervenciones del facilitador del token por dia, en el anio
+  -- lectivo actual (INTERVENCIONES.ANIO = FN_ANIO_LECTIVO_ACTUAL()).
+  -- { success, data:{ es_facilitador, anio, dias:[ { fecha:'YYYY-MM-DD', total, si, no } ] } }
+  -- "no" incluye SI_NO nulo, igual que el KPI del mes (NVL(si_no,'No')).
+  PROCEDURE por_dia(p_token IN VARCHAR2);
 
   -- Valida como la pagina (requeridos, LOVs, OBS, triggers) e inserta.
   -- 200 { success, data:{ id_intervencion } } | 400 { success:false, message, campo }
@@ -623,6 +630,47 @@ EXCEPTION
     WHEN OTHERS THEN p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
 END recientes;
 
+PROCEDURE por_dia(p_token IN VARCHAR2) IS
+    l_usuario VARCHAR2(255);
+    l_fac     NUMBER;
+    l_anio    NUMBER := FN_ANIO_LECTIVO_ACTUAL();
+BEGIN
+    IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.OPEN_OBJECT('data');
+    APEX_JSON.WRITE('es_facilitador', l_fac IS NOT NULL);
+    APEX_JSON.WRITE('anio', l_anio, p_write_null => TRUE);
+    APEX_JSON.OPEN_ARRAY('dias');
+    IF l_fac IS NOT NULL THEN
+        -- FECHA_HORA ya esta en hora de Paraguay (trigger): TRUNC da el dia local.
+        -- 'YYYY-MM-DD' es numerico: no depende del idioma de la sesion de ORDS.
+        FOR r IN (
+            SELECT TO_CHAR(TRUNC(i.FECHA_HORA), 'YYYY-MM-DD') dia,
+                   COUNT(*) total,
+                   COUNT(CASE WHEN NVL(i.SI_NO, 'No') = 'Si' THEN 1 END) si
+              FROM INTERVENCIONES i
+             WHERE i.ID_FACILITADOR = l_fac
+               AND i.ANIO = l_anio
+             GROUP BY TRUNC(i.FECHA_HORA)
+             ORDER BY TRUNC(i.FECHA_HORA)
+        ) LOOP
+            APEX_JSON.OPEN_OBJECT;
+            APEX_JSON.WRITE('fecha', r.dia);
+            APEX_JSON.WRITE('total', r.total);
+            APEX_JSON.WRITE('si', r.si);
+            APEX_JSON.WRITE('no', r.total - r.si);
+            APEX_JSON.CLOSE_OBJECT;
+        END LOOP;
+    END IF;
+    APEX_JSON.CLOSE_ARRAY;
+    APEX_JSON.CLOSE_OBJECT;
+    APEX_JSON.CLOSE_OBJECT;
+EXCEPTION
+    WHEN OTHERS THEN p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+END por_dia;
+
 PROCEDURE guardar(
     p_token             IN VARCHAR2,
     p_id_institucion    IN NUMBER,
@@ -847,7 +895,7 @@ DECLARE
   l_rutas t_rutas := t_rutas(
       'mis-intervenciones', 'mis-intervenciones/inicio', 'mis-intervenciones/horarios',
       'mis-intervenciones/clase', 'mis-intervenciones/indices', 'mis-intervenciones/resumen',
-      'mis-intervenciones/recientes');
+      'mis-intervenciones/recientes', 'mis-intervenciones/por-dia');
   l_modulo NUMBER;
   l_ajenos NUMBER;
 
@@ -919,10 +967,12 @@ BEGIN
            'PKG_INTERVENCIONES_APP_ETHOS.RESUMEN(p_token => l_token);');
   publicar('mis-intervenciones/recientes', 'GET',
            'PKG_INTERVENCIONES_APP_ETHOS.RECIENTES(p_token => l_token, p_limite => TO_NUMBER(:limite));');
+  publicar('mis-intervenciones/por-dia', 'GET',
+           'PKG_INTERVENCIONES_APP_ETHOS.POR_DIA(p_token => l_token);');
   publicar('mis-intervenciones', 'POST',
            'PKG_INTERVENCIONES_APP_ETHOS.GUARDAR(p_token => l_token, p_id_institucion => TO_NUMBER(:id_institucion), p_id_postulacion => TO_NUMBER(:id_postulacion), p_grado => :grado, p_seccion => :seccion, p_turno => TO_NUMBER(:turno), p_id_enfasis => TO_NUMBER(:id_enfasis), p_manual => :manual, p_id_indice => TO_NUMBER(:id_indice), p_si_no => :si_no, p_motivo_desarrollo => :motivo_desarrollo, p_observacion => :observacion, p_latitud => :latitud, p_longitud => :longitud);');
   COMMIT;
-  DBMS_OUTPUT.PUT_LINE('[OK]   Publicados los 7 endpoints de ethos/mis-intervenciones.');
+  DBMS_OUTPUT.PUT_LINE('[OK]   Publicados los 8 endpoints de ethos/mis-intervenciones.');
 END;
 /
 
@@ -940,7 +990,7 @@ BEGIN
    WHERE m.NAME = 'ethos'
      AND t.URI_TEMPLATE LIKE 'mis-intervenciones%'
      AND DBMS_LOB.INSTR(h.SOURCE, 'PKG_INTERVENCIONES_APP_ETHOS') > 0;
-  DBMS_OUTPUT.PUT_LINE('[INFO] Handlers de mis-intervenciones publicados: ' || l_n || ' de 7.');
+  DBMS_OUTPUT.PUT_LINE('[INFO] Handlers de mis-intervenciones publicados: ' || l_n || ' de 8.');
 END;
 /
 

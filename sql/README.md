@@ -23,14 +23,17 @@ Nada de esto se ejecuta desde la app.
 
 ## Endpoints de la app (`PKG_FACILITADOR_APP_ETHOS`)
 
-Los dos sacan el `ID_FACILITADOR` **del token**, en el servidor (`FACILITADORES.USUARIO = usuario del token`, igual que `:APP_USER` en APEX). El cliente nunca manda el id: un facilitador no puede ver datos de otro aunque modifique la URL.
+Todos sacan el `ID_FACILITADOR` **del token**, en el servidor (`FACILITADORES.USUARIO = usuario del token`, igual que `:APP_USER` en APEX). El cliente nunca manda el id: un facilitador no puede ver datos de otro aunque modifique la URL.
+
+La única excepción, pedida a propósito, es `cumpleanios-hoy`: muestra a todos los facilitadores activos que cumplen hoy, pero devuelve **solo el nombre**. Nunca devuelve la fecha de nacimiento, la edad, el id ni otro dato de `FACILITADORES`.
 
 | Método | Ruta | Responde |
 |---|---|---|
 | GET | `mi-facilitador` | `{ success, data: { usuario, id_facilitador, es_facilitador } }`. `id_facilitador: null` si el usuario no está en `FACILITADORES`; 401 si el token no sirve. |
 | GET | `mis-evaluaciones` | Página 11 de APEX: `{ success, es_facilitador, data: [ { fecha_desde, aspectos_positivos, aspectos_mejorar, marcadas, calificacion, puntuacion, indicador } ] }` |
+| GET | `cumpleanios-hoy` | Cumpleaños del día en Inicio: `{ success, es_facilitador, data: [ { nombre, soy_yo } ] }`. Se toman los facilitadores con `FECHA_NACIMIENTO` del día de hoy en Paraguay (`SYSDATE - 3/24`), comparando `'MMDD'`, que no depende del idioma. Quedan afuera los que tienen `ACTIVO` empezando con N o I. Los nacidos un 29/02 se saludan el 28/02 en años no bisiestos. Si el usuario no es facilitador, la lista viene vacía. |
 
-Cómo instalarlo: APEX → SQL Workshop → SQL Scripts → Upload `facilitador_app_ethos.sql` → Run, con el usuario dueño del esquema. La salida debe decir `[OK] PKG_FACILITADOR_APP_ETHOS compilado` y `Handlers nuevos publicados: 2 de 2`.
+Cómo instalarlo: APEX → SQL Workshop → SQL Scripts → Upload `facilitador_app_ethos.sql` → Run, con el usuario dueño del esquema. La salida debe decir `[OK] PKG_FACILITADOR_APP_ETHOS compilado` y `Handlers nuevos publicados: 3 de 3`, y lista los valores de `ACTIVO` para confirmar el filtro.
 
 ## Mis horarios: agenda (`PKG_AGENDA_APP_ETHOS`)
 
@@ -93,6 +96,7 @@ Corresponde a la página 2 "Intervención" de APEX. Cada GET corre **el mismo se
 | GET | `mis-intervenciones/indices?id_postulacion=&manual=&grado=&turno=` | LOV y default de `P2_ID_INDICE` | `{ indices:[{id_indice,titulo}], indice_por_defecto }` |
 | GET | `mis-intervenciones/resumen` | KPIs de Inicio | `{ es_facilitador, del_mes, desarrolladas_del_mes, mes, instituciones, indices_desarrollados, manuales_desarrollados }`. Instituciones: distintas en `POSTULACIONES` del año lectivo. Índices: desarrollados hasta la fecha (sin repetir en la misma postulación). Manuales: postulaciones `Finalizado`. |
 | GET | `mis-intervenciones/recientes?limite=5` | "Actividad reciente" de Inicio | `[ { id_intervencion, fecha_hora, si_no, motivo_desarrollo, manual, indice, institucion, grado, seccion } ]` |
+| GET | `mis-intervenciones/por-dia` | Gráfico semanal de Inicio | `{ es_facilitador, anio, dias:[ { fecha:'YYYY-MM-DD', total, si, no } ] }`: intervenciones del facilitador por día en el año lectivo actual (`INTERVENCIONES.ANIO = FN_ANIO_LECTIVO_ACTUAL()`). `no` incluye `SI_NO` nulo, como el KPI del mes. |
 | POST | `mis-intervenciones` | Botón Guardar (validaciones + INSERT) | 200 `{ id_intervencion }` · 400 `{ message, campo }` · 403 si no es facilitador |
 
 Validaciones del POST:

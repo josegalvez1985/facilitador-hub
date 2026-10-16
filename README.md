@@ -82,6 +82,9 @@ src/
     evaluaciones.ts          Evaluaciones: lectura de GET mis-evaluaciones
     agenda.ts                Mi agenda: lectura de GET mi-agenda (V_AGENDA + próximo índice)
     clase-agenda.tsx         Tarjeta de clase (Mi agenda y "Tus clases de hoy") con el próximo índice
+    cumpleanios.tsx          Inicio: cumpleaños del día (GET cumpleanios-hoy)
+    grafico-semanal.tsx      Inicio: gráfico de intervenciones por semana (GET mis-intervenciones/por-dia)
+    ayuda.tsx / manual.ts    Perfil → Ayuda: el manual de uso (manual.ts se genera desde docs/manual-usuario.md)
     proxima-clase.tsx        Campana de notificaciones: próxima clase según la hora actual
     linea-tiempo.tsx         Vista "Línea de tiempo" de Mi agenda
     materiales.ts            Mis materiales: lectura de GET mis-materiales
@@ -156,6 +159,8 @@ Los tres modales de APEX (institución → días → historial) quedan en una so
 
 | KPI / sección | De dónde sale |
 |---|---|
+| Intervenciones por semana (gráfico, encima de los KPIs) | `mis-intervenciones/por-dia`: una fila por día del año lectivo con total, Sí y No del facilitador. Se pide una vez y los filtros de mes y semana se aplican en la app. Barras agrupadas por día (lunes a viernes; sábado y domingo solo si hubo intervenciones), leyenda con los totales de la semana, lectura del día tocado y **Ver tabla**. Colores: `colors.chart` (azul / aguamarina / naranja, iguales en todos los temas y validados para daltonismo) |
+| Cumpleaños del día | `cumpleanios-hoy`: tarjeta "🎂 ¡Hoy celebramos!" con los facilitadores que cumplen hoy (solo el nombre). Si el cumpleañero es el usuario, aparece aparte "🎉 ¡Feliz cumpleaños, …!" con su foto. Si nadie cumple, no se muestra nada |
 | Foto con aureola (junto al saludo) | La foto de perfil guardada en el dispositivo (o las iniciales), con un anillo degradé de los colores del tema que gira lento y un brillo suave. Queda quieta si el sistema tiene "reducir movimiento". Al tocarla se abre Perfil |
 | Clases esta semana | Días con horario de cada fila de la agenda (`mi-agenda`); abajo, las de hoy |
 | Marcaciones del mes | Intervenciones del mes actual (hora de Paraguay); abajo, cuántas fueron "Sí" |
@@ -182,6 +187,9 @@ La campana de la barra superior muestra **tu próxima clase**, calculada con la 
   - Se muestra en el saludo de Inicio (con la aureola), en el menú lateral de escritorio y en el panel **Menú** del celular.
   - En la PWA no hay editor de recorte: se toma el cuadrado central. En Android e iOS aparece el editor.
 - **Apariencia:** modo claro / oscuro / automático y 6 temas de color, también guardados en el dispositivo.
+- **Ayuda:** el manual de uso, con un capítulo desplegable por tema. También se llega desde **Centro de ayuda** → **Ver el manual de uso**.
+  - El texto está en [docs/manual-usuario.md](docs/manual-usuario.md). Después de editarlo, corré `npm run manual` para regenerar `src/facilitadores/manual.ts`, porque la app no lee archivos `.md`.
+  - Formato admitido: `## ` capítulo, `### ` subtítulo, `- ` viñeta, `1. ` paso, `> ` consejo y `**negrita**`.
 
 ### Mi agenda (página 3)
 

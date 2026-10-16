@@ -12,7 +12,7 @@ import { useApp } from './provider';
 import { PanelProximaClase, useProximaClase } from './proxima-clase';
 import { breakpoints, radius } from './theme';
 import { makeStyles, useTheme } from './theme-provider';
-import { Avatar, Brand, Button, Dot, Modal, ModalActions, ModalText, Notice, Text } from './ui';
+import { Avatar, Brand, Button, Dot, Modal, ModalActions, ModalText, Text } from './ui';
 
 type NavItem = { href: Href; path: string; label: string; short: string; icon: LucideIcon; title: string };
 
@@ -223,8 +223,17 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <MarkModal />
       <Modal visible={help} onClose={() => setHelp(false)} title="Centro de ayuda" closeLabel="Cerrar ayuda">
+        <ModalText>El manual de uso explica cada sección de la app. Lo encontrás en Perfil → Ayuda.</ModalText>
         <ModalText>Para asistencia con tus horarios o instituciones, comunícate con tu coordinador educativo.</ModalText>
-        <Notice>Las marcaciones y los datos de esta versión son de demostración.</Notice>
+        <Button
+          icon={BookOpen}
+          label="Ver el manual de uso"
+          onPress={() => {
+            setHelp(false);
+            go('/perfil');
+          }}
+          style={{ marginTop: 6 }}
+        />
       </Modal>
     </View>
   );
