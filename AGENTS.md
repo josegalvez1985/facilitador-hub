@@ -1,15 +1,7 @@
-<!-- LOVABLE:BEGIN -->
-> [!IMPORTANT]
-> This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
-> published git history — force pushing, or rebasing/amending/squashing commits
-> that are already pushed — as it rewrites history on Lovable's side and the
-> user will likely lose their project history.
->
-> Commits you push to the connected branch sync back to Lovable and show up in
-> the editor, so keep the branch in a working state.
-<!-- LOVABLE:END -->
-
 ## Application rules
-- Keep the app as a mobile-first TanStack web application; native React Native is unsupported by this environment.
-- Store frontend demonstration state in the shared Facilitadores provider, never present it as authenticated or durably saved data.
-- Keep content sections in distinct file routes and use the shared shell for navigation so desktop and mobile stay consistent.
+- The app is React Native with Expo (SDK 58) and Expo Router; the web version runs through react-native-web from the same code. Do not add DOM-only UI (HTML elements, CSS files, Tailwind); use React Native primitives and `StyleSheet`.
+- Install dependencies with `npx expo install <package>` so versions match the Expo SDK. Expo APIs change between SDKs: check https://docs.expo.dev/versions/v58.0.0/ instead of relying on memory.
+- Store frontend demonstration state in the shared Facilitadores provider (`src/facilitadores/provider.tsx`), never present it as authenticated or durably saved data.
+- Keep content sections in distinct file routes under `src/app/` and use the shared shell (`src/facilitadores/shell.tsx`) for navigation so desktop, web mobile and native stay consistent.
+- Keep non-route code out of `src/app/`. Tests live in `__tests__/`.
+- Before finishing a change run `npm run typecheck`, `npm run lint` and `npm test`.

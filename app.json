@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "Facilitadores",
+    "slug": "facilitadores",
+    "scheme": "facilitadores",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#f7f9fc",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.facilitadores.app"
+    },
+    "android": {
+      "package": "com.facilitadores.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#7196cd",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "name": "Facilitadores",
+      "shortName": "Facilitadores",
+      "description": "Tu espacio educativo para organizar clases, materiales y marcaciones.",
+      "lang": "es",
+      "themeColor": "#2563eb",
+      "backgroundColor": "#f7f9fc"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-image",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220,
+          "backgroundColor": "#7196cd"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
