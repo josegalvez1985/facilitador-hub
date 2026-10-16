@@ -309,28 +309,24 @@ export function MarkScreen() {
       </Paso>
 
       <Paso n={2} titulo="Clase" icon={GraduationCap} cargando={cargando.clase}>
-        <View style={s.fila2}>
-          <Campo etiqueta="Grado" requerido error={errores.grado} mitad>
-            <Chips opciones={clase?.grados ?? []} valor={form.grado} vacio="—" onCambiar={(v) => {
-              actualizar({ grado: v as string });
-              refrescarIndices(form.id_postulacion, form.manual, v as string, form.turno);
-            }} />
-          </Campo>
-          <Campo etiqueta="Sección" error={errores.seccion} mitad>
-            <Chips opciones={clase?.secciones ?? []} valor={form.seccion} vacio="—" onCambiar={(v) => actualizar({ seccion: v as string | null })} />
-          </Campo>
+        {/* Ficha compacta: casi siempre cada dato tiene una sola opción por horario. */}
+        <View style={s.ficha}>
+          <Casilla etiqueta="Grado" requerido error={errores.grado} opciones={clase?.grados ?? []} valor={form.grado} onCambiar={(v) => {
+            actualizar({ grado: v as string });
+            refrescarIndices(form.id_postulacion, form.manual, v as string, form.turno);
+          }} />
+          <Casilla etiqueta="Sección" error={errores.seccion} opciones={clase?.secciones ?? []} valor={form.seccion} onCambiar={(v) => actualizar({ seccion: v as string | null })} />
+          <Casilla etiqueta="Turno" requerido error={errores.turno} opciones={clase?.turnos ?? []} valor={form.turno} onCambiar={(v) => {
+            actualizar({ turno: v as number });
+            refrescarIndices(form.id_postulacion, form.manual, form.grado, v as number);
+          }} />
+          <Casilla etiqueta="Énfasis" error={errores.id_enfasis} opciones={clase?.enfasis ?? []} valor={form.id_enfasis} onCambiar={(v) => actualizar({ id_enfasis: v as number | null })} />
         </View>
-        <View style={s.fila2}>
-          <Campo etiqueta="Turno" requerido error={errores.turno} mitad>
-            <Chips opciones={clase?.turnos ?? []} valor={form.turno} vacio="—" onCambiar={(v) => {
-              actualizar({ turno: v as number });
-              refrescarIndices(form.id_postulacion, form.manual, form.grado, v as number);
-            }} />
-          </Campo>
-          <Campo etiqueta="Énfasis" error={errores.id_enfasis} mitad>
-            <Chips opciones={clase?.enfasis ?? []} valor={form.id_enfasis} vacio="—" onCambiar={(v) => actualizar({ id_enfasis: v as number | null })} />
-          </Campo>
-        </View>
+        {[errores.grado, errores.seccion, errores.turno, errores.id_enfasis].filter(Boolean).map((e) => (
+          <Text key={e} accessibilityRole="alert" size={11} color={colors.destructive} style={{ marginTop: 6 }}>
+            {e}
+          </Text>
+        ))}
       </Paso>
 
       <Paso n={3} titulo="Contenido" icon={BookOpen} cargando={cargando.indices}>
@@ -501,10 +497,10 @@ function Paso({ n, titulo, icon: Icon, cargando, children }: { n: number; titulo
   );
 }
 
-function Campo({ etiqueta, requerido, error, cargando, mitad, children }: { etiqueta?: string; requerido?: boolean; error?: string; cargando?: boolean; mitad?: boolean; children: ReactNode }) {
+function Campo({ etiqueta, requerido, error, cargando, children }: { etiqueta?: string; requerido?: boolean; error?: string; cargando?: boolean; children: ReactNode }) {
   const { colors } = useTheme();
   return (
-    <View style={[{ marginBottom: 14 }, mitad && { flex: 1, minWidth: 140 }]}>
+    <View style={{ marginBottom: 14 }}>
       {etiqueta && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
           <Text weight="semibold" size={12}>
@@ -565,22 +561,15 @@ function Chips({ opciones, valor, onCambiar, vacio, icono: Icono, colorDe }: { o
 function Selector({ titulo, placeholder, opciones, valor, onCambiar, buscador, colorBorde }: { titulo: string; placeholder: string; opciones: Opcion[]; valor: Valor; onCambiar: (v: Valor) => void; buscador?: boolean; colorBorde?: string }) {
   const { colors } = useTheme();
   const s = useStyles();
-  const insets = useSafeAreaInsets();
   const [abierto, setAbierto] = useState(false);
-  const [filtro, setFiltro] = useState('');
   const actual = opciones.find((o) => o.valor === valor);
-  const norm = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const visibles = filtro ? opciones.filter((o) => norm(o.etiqueta).includes(norm(filtro))) : opciones;
   return (
     <>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${titulo}: ${actual?.etiqueta ?? placeholder}`}
         disabled={!opciones.length}
-        onPress={() => {
-          setFiltro('');
-          setAbierto(true);
-        }}
+        onPress={() => setAbierto(true)}
         style={[s.selector, colorBorde ? { borderColor: colorBorde, borderLeftWidth: 4 } : null, !opciones.length && { opacity: 0.6 }]}
       >
         <Text size={14} color={actual ? colors.foreground : colors.mutedForeground} style={{ flex: 1 }} numberOfLines={2}>
@@ -588,15 +577,69 @@ function Selector({ titulo, placeholder, opciones, valor, onCambiar, buscador, c
         </Text>
         <ChevronDown size={18} color={colors.mutedForeground} />
       </Pressable>
-      <RNModal visible={abierto} transparent animationType="slide" onRequestClose={() => setAbierto(false)}>
+      <HojaOpciones visible={abierto} titulo={titulo} opciones={opciones} valor={valor} buscador={buscador} onCerrar={() => setAbierto(false)} onElegir={onCambiar} />
+    </>
+  );
+}
+
+/**
+ * Casilla de la ficha "Clase": etiqueta chica y valor. Con una sola opción el valor queda fijo;
+ * con varias, tocarla abre la lista para elegir.
+ */
+function Casilla({ etiqueta, requerido, opciones, valor, onCambiar, error }: { etiqueta: string; requerido?: boolean; opciones: Opcion[]; valor: Valor; onCambiar: (v: Valor) => void; error?: string }) {
+  const { colors } = useTheme();
+  const s = useStyles();
+  const [abierto, setAbierto] = useState(false);
+  const actual = opciones.find((o) => o.valor === valor);
+  const elegible = opciones.length > 1;
+  const texto = actual?.etiqueta || (elegible ? 'Elegir' : '—');
+  return (
+    <>
+      <Pressable
+        accessibilityRole={elegible ? 'button' : undefined}
+        accessibilityLabel={`${etiqueta}: ${actual?.etiqueta || 'sin dato'}${elegible ? '. Tocá para cambiar' : ''}`}
+        disabled={!elegible}
+        onPress={() => setAbierto(true)}
+        style={({ pressed }) => [s.casilla, elegible && s.casillaElegible, error ? { borderColor: colors.destructive } : null, pressed && { opacity: 0.8 }]}
+      >
+        <Text size={10} weight="bold" color={colors.mutedForeground} numberOfLines={1} style={{ letterSpacing: 0.5 }}>
+          {etiqueta.toUpperCase()}
+          {requerido ? <Text size={10} color={colors.destructive}> *</Text> : null}
+        </Text>
+        <View style={s.casillaValor}>
+          <Text size={14} weight="bold" color={actual?.etiqueta ? colors.foreground : colors.mutedForeground} numberOfLines={2} style={{ flexShrink: 1 }}>
+            {texto}
+          </Text>
+          {elegible && <ChevronDown size={14} color={colors.primaryText} />}
+        </View>
+      </Pressable>
+      {elegible && <HojaOpciones visible={abierto} titulo={etiqueta} opciones={opciones} valor={valor} onCerrar={() => setAbierto(false)} onElegir={onCambiar} />}
+    </>
+  );
+}
+
+/** Panel inferior con la lista de opciones (y buscador si son muchas). */
+function HojaOpciones({ visible, titulo, opciones, valor, buscador, onCerrar, onElegir }: { visible: boolean; titulo: string; opciones: Opcion[]; valor: Valor; buscador?: boolean; onCerrar: () => void; onElegir: (v: Valor) => void }) {
+  const { colors } = useTheme();
+  const s = useStyles();
+  const insets = useSafeAreaInsets();
+  const [filtro, setFiltro] = useState('');
+  const norm = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const visibles = filtro ? opciones.filter((o) => norm(o.etiqueta).includes(norm(filtro))) : opciones;
+  const cerrar = () => {
+    setFiltro('');
+    onCerrar();
+  };
+  return (
+      <RNModal visible={visible} transparent animationType="slide" onRequestClose={cerrar}>
         <View style={s.hojaFondo}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setAbierto(false)} accessibilityLabel="Cerrar lista" />
+          <Pressable style={StyleSheet.absoluteFill} onPress={cerrar} accessibilityLabel="Cerrar lista" />
           <View style={[s.hoja, { paddingBottom: Math.max(16, insets.bottom + 8) }]}>
             <View style={s.hojaHead}>
               <Text weight="bold" size={16} style={{ flex: 1 }}>
                 {titulo}
               </Text>
-              <Button variant="ghost" size="icon" icon={X} accessibilityLabel="Cerrar lista" onPress={() => setAbierto(false)} />
+              <Button variant="ghost" size="icon" icon={X} accessibilityLabel="Cerrar lista" onPress={cerrar} />
             </View>
             {buscador && opciones.length > 6 && (
               <View style={s.buscador}>
@@ -613,8 +656,8 @@ function Selector({ titulo, placeholder, opciones, valor, onCambiar, buscador, c
                     accessibilityRole="button"
                     accessibilityLabel={o.etiqueta}
                     onPress={() => {
-                      setAbierto(false);
-                      onCambiar(o.valor);
+                      cerrar();
+                      onElegir(o.valor);
                     }}
                     style={({ pressed }) => [s.opcion, activo && s.opcionActiva, pressed && { backgroundColor: colors.muted }]}
                   >
@@ -634,7 +677,6 @@ function Selector({ titulo, placeholder, opciones, valor, onCambiar, buscador, c
           </View>
         </View>
       </RNModal>
-    </>
   );
 }
 
@@ -645,7 +687,10 @@ const useStyles = makeStyles((c) =>
     paso: { marginBottom: 14 },
     pasoHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
     pasoNro: { width: 24, height: 24, borderRadius: 12, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' },
-    fila2: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 16 },
+    ficha: { flexDirection: 'row', gap: 8 },
+    casilla: { flex: 1, minWidth: 0, gap: 4, paddingVertical: 10, paddingHorizontal: 10, borderRadius: radius.md, borderWidth: 1, borderColor: c.border, backgroundColor: c.muted },
+    casillaElegible: { backgroundColor: c.card, borderColor: c.primary },
+    casillaValor: { flexDirection: 'row', alignItems: 'center', gap: 4 },
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     chip: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 38, paddingHorizontal: 14, borderRadius: 19, borderWidth: 1, borderColor: c.border, backgroundColor: c.background },
     chipActivo: { backgroundColor: c.primary, borderColor: c.primary },

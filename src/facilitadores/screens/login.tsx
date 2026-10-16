@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
+import { AccessibilityInfo, Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowRight, Check, Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react-native';
@@ -8,7 +9,7 @@ import { ArrowRight, Check, Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-r
 import { getPasswordRecordada, getUsuarioRecordado, setPasswordRecordada, setUsuarioRecordado } from '../auth/recordar';
 import { useSession } from '../auth/session';
 import { useLayout } from '../shell';
-import { radius } from '../theme';
+import { alpha, radius } from '../theme';
 import { makeStyles, useTheme } from '../theme-provider';
 import { useToast } from '../toast';
 import { Brand, Button, Field, Text } from '../ui';
@@ -74,18 +75,8 @@ export function LoginScreen() {
     }
   };
 
-  return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[s.wrap, desktop && { flexDirection: 'row' }]}>
-      {desktop && (
-        <View style={{ flex: 1 }}>
-          <Image source={classroom} style={StyleSheet.absoluteFill} contentFit="cover" accessibilityLabel="Profesora y estudiantes compartiendo una clase" />
-        </View>
-      )}
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={[s.scroll, { paddingTop: insets.top + 30, paddingBottom: insets.bottom + 30 }]} keyboardShouldPersistTaps="handled">
-        <View style={[s.panel, { paddingHorizontal: desktop ? 60 : 24 }]}>
-          <View style={{ marginBottom: desktop ? 60 : 44 }}>
-            <Brand />
-          </View>
+  const formulario = (
+    <>
           <Text weight="bold" size={desktop ? 29 : 25} style={{ lineHeight: desktop ? 39 : 34, marginBottom: 9 }}>
             Qué bueno verte de nuevo.
           </Text>
@@ -139,7 +130,73 @@ export function LoginScreen() {
           <Text size={10} color={colors.mutedForeground} style={{ textAlign: 'center', marginTop: 40 }}>
             © {new Date().getFullYear()} Facilitadores · Tu vocación nos conecta.
           </Text>
+    </>
+  );
+
+  if (!desktop) return <LoginCelular>{formulario}</LoginCelular>;
+
+  return (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[s.wrap, { flexDirection: 'row' }]}>
+      <View style={{ flex: 1 }}>
+        <Image source={classroom} style={StyleSheet.absoluteFill} contentFit="cover" accessibilityLabel="Profesora y estudiantes compartiendo una clase" />
+      </View>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={[s.scroll, { paddingTop: insets.top + 30, paddingBottom: insets.bottom + 30 }]} keyboardShouldPersistTaps="handled">
+        <View style={[s.panel, { paddingHorizontal: 60 }]}>
+          <View style={{ marginBottom: 60 }}>
+            <Brand />
+          </View>
+          {formulario}
         </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+/**
+ * Login en celular (APK y web móvil): arriba la foto del aula fundida con el color del tema,
+ * y el formulario en una tarjeta que sube sobre la foto. Con "reducir movimiento" aparece sin animar.
+ */
+function LoginCelular({ children }: { children: ReactNode }) {
+  const { colors } = useTheme();
+  const s = useStyles();
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const [entrada] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    let vigente = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .catch(() => false)
+      .then((reducir) => {
+        if (!vigente) return;
+        if (reducir) entrada.setValue(1);
+        else Animated.timing(entrada, { toValue: 1, duration: 520, easing: Easing.out(Easing.cubic), useNativeDriver: Platform.OS !== 'web' }).start();
+      });
+    return () => {
+      vigente = false;
+    };
+  }, [entrada]);
+
+  const tint = colors.heroTint;
+  // La foto ocupa ~38 % de la pantalla, con piso y techo para teléfonos muy chicos o muy altos.
+  const alturaFoto = Math.round(Math.min(340, Math.max(220, height * 0.38))) + insets.top;
+  const translateY = entrada.interpolate({ inputRange: [0, 1], outputRange: [28, 0] });
+
+  return (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.wrap}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" bounces={false}>
+        <View style={{ height: alturaFoto }}>
+          <Image source={classroom} style={StyleSheet.absoluteFill} contentFit="cover" contentPosition={{ left: '62%', top: '45%' }} accessibilityLabel="Profesora y estudiantes compartiendo una clase" />
+          {/* Arriba, velo suave para que se lea la barra de estado; abajo, el color del tema donde va el logo. */}
+          <LinearGradient style={StyleSheet.absoluteFill} colors={[alpha(tint, 0.7), alpha(tint, 0.1), alpha(tint, 0.65), tint]} locations={[0, 0.3, 0.72, 1]} />
+          <Animated.View style={[s.marca, { opacity: entrada }]}>
+            <Brand />
+          </Animated.View>
+        </View>
+        <Animated.View style={[s.hoja, { paddingBottom: insets.bottom + 24, opacity: entrada, transform: [{ translateY }] }]}>
+          <View style={s.manija} />
+          {children}
+        </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -150,6 +207,18 @@ const useStyles = makeStyles((colors) =>
     wrap: { flex: 1, backgroundColor: colors.card },
     scroll: { flexGrow: 1, justifyContent: 'center' },
     panel: { width: '100%', maxWidth: 560, alignSelf: 'center' },
+    marca: { position: 'absolute', left: 24, bottom: 44 },
+    hoja: {
+      flexGrow: 1,
+      marginTop: -28,
+      paddingHorizontal: 24,
+      paddingTop: 14,
+      backgroundColor: colors.card,
+      borderTopLeftRadius: 28,
+      borderTopRightRadius: 28,
+      boxShadow: `0 -10px 30px ${alpha(colors.foreground, colors.scheme === 'dark' ? 0.35 : 0.1)}`,
+    },
+    manija: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: 22 },
     // 16 px: Safari de iOS (PWA) no hace zoom al enfocar el campo.
     input16: { fontSize: 16 },
     remember: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -4, marginBottom: 18, alignSelf: 'flex-start' },

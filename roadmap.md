@@ -27,7 +27,7 @@
 
 ## Pendiente
 - [ ] Correr en APEX: `sql/historial_app_ethos.sql`, `sql/intervenciones_realizadas_app_ethos.sql`, `sql/agenda_app_ethos.sql`, `sql/materiales_app_ethos.sql` y de nuevo `sql/intervenciones_app_ethos.sql` (agrega el resumen ampliado y recientes); probar con TWALDE.
-- [ ] Marcar: revisar por qué TWALDE no ve instituciones. El backend replica la página 2 sin diferencias; falta correr `sql/diagnostico_marcar.sql` con ese usuario para ver qué filtro las deja afuera.
+- [ ] Marcar sin instituciones: causa encontrada. `V_INSTITUCIONES` compara el día con `TO_CHAR(..,'FMDAY')`, que en ORDS sale en inglés ("FRIDAY") y nunca coincide. Sin tocar APEX: volver a correr `sql/intervenciones_app_ethos.sql` (crea la copia `V_INSTITUCIONES_APP_ETHOS` y el paquete la usa) y probar con SALVADORAGB.
 - [ ] Reemplazar `sql/ords_modulo_ethos_export.sql` por la exportación completa.
 - [ ] Generar un APK nuevo para que la foto de perfil funcione en Android (`expo-image-picker` y `expo-image-manipulator` son módulos nativos). El workflow `APK` lo hace en el próximo push.
 - [ ] Probar la primera corrida del workflow `APK` en GitHub Actions y que el celular instale `facilitadores.apk`.

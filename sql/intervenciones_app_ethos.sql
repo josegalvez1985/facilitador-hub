@@ -3,6 +3,7 @@
 --------------------------------------------------------------------------------
 -- Script idempotente: se puede volver a correr.
 --
+--   0. Vista V_INSTITUCIONES_APP_ETHOS (copia de V_INSTITUCIONES solo para la app)
 --   1. Paquete PKG_INTERVENCIONES_APP_ETHOS
 --   2. Endpoints EXCLUSIVOS en el modulo ORDS 'ethos' (YA EXISTENTE, NO se
 --      redefine). No pisa ningun endpoint existente: si alguna de estas rutas
@@ -26,10 +27,122 @@
 --   :P2_ID_FACILITADOR y :APP_USER salen del TOKEN, nunca del cliente.
 --   FECHA_HORA, ANIO, ID_AUDITORIA y la ubicacion en 0 los siguen poniendo los
 --   triggers de INTERVENCIONES, igual que con APEX.
+--   Unica diferencia: se lee V_INSTITUCIONES_APP_ETHOS en vez de V_INSTITUCIONES
+--   (ver seccion 0). Mismas filas, pero sin depender del idioma de la sesion.
 --------------------------------------------------------------------------------
 
 SET SERVEROUTPUT ON
 SET DEFINE OFF
+
+--------------------------------------------------------------------------------
+-- 0. VISTA V_INSTITUCIONES_APP_ETHOS
+--------------------------------------------------------------------------------
+-- Copia EXACTA de V_INSTITUCIONES (DDL del 16/10/2026) con un solo cambio:
+-- el dia de hoy se calcula con TO_CHAR(.., 'FMDAY', 'NLS_DATE_LANGUAGE=SPANISH').
+--
+-- Por que: V_INSTITUCIONES solo trae las clases de HOY y compara el dia con
+-- TO_CHAR(.., 'FMDAY'), que sale en el idioma de la sesion. En APEX (espanol)
+-- da 'VIERNES' y coincide; en ORDS, la sesion de la app, da 'FRIDAY' y la
+-- vista queda vacia: Marcar no mostraba instituciones ni horarios.
+--
+-- V_INSTITUCIONES NO SE TOCA: la sigue usando APEX tal cual. Esta copia la usa
+-- solo PKG_INTERVENCIONES_APP_ETHOS. Si alguna vez cambia V_INSTITUCIONES,
+-- hay que repetir el cambio aca.
+--------------------------------------------------------------------------------
+
+CREATE OR REPLACE VIEW V_INSTITUCIONES_APP_ETHOS
+  (ID_INSTITUCION, NOMBRE, ID_FACILITADOR, HORA_DESDE, HORA_HASTA, DIA, GRADO, MANUAL,
+   TURNO, ID_POSTULACION, SECCION, ID_ENFASIS, ESTADO, ANIO, ESTADO_INSTITUCION) AS
+select ID_INSTITUCION, NOMBRE, ID_FACILITADOR, HORA_DESDE, HORA_HASTA, DIA, GRADO, MANUAL, TURNO,
+       ID_POSTULACION, SECCION, ID_ENFASIS, ESTADO, ANIO, ESTADO_INSTITUCION
+  from (
+        -- LUNES
+        select A.ID_INSTITUCION, B.NOMBRE, A.ID_FACILITADOR, A.LUNES_DESDE HORA_DESDE, A.LUNES_HASTA HORA_HASTA, 'LUNES' DIA,
+               CASE WHEN "3" IS NOT NULL THEN '3º' WHEN "4" IS NOT NULL THEN '4º' WHEN "5" IS NOT NULL THEN '5º'
+                    WHEN "6" IS NOT NULL THEN '6º' WHEN "7" IS NOT NULL THEN '7º' WHEN "8" IS NOT NULL THEN '8º'
+                    WHEN "9" IS NOT NULL THEN '9º' WHEN "1M" IS NOT NULL THEN '1M' WHEN "2M" IS NOT NULL THEN '2M'
+                    WHEN "3M" IS NOT NULL THEN '3M' ELSE '0' END AS GRADO,
+               CASE WHEN SER IS NOT NULL THEN 'SER' WHEN HACER IS NOT NULL THEN 'HACER' WHEN TENER IS NOT NULL THEN 'TENER'
+                    WHEN CARACTER IS NOT NULL THEN 'CARACTER' WHEN VISION IS NOT NULL THEN 'VISION'
+                    WHEN CORAJE IS NOT NULL THEN 'CORAJE' WHEN LIDERAZGO IS NOT NULL THEN 'LIDERAZGO' ELSE '0' END AS MANUAL,
+               A.TURNO, A.ID_POSTULACION, A.SECCION, A.ID_ENFASIS,
+               CASE WHEN A.ESTADO IS NULL THEN 'Activo' ELSE A.ESTADO END AS ESTADO,
+               A.ANIO, NVL(B.ESTADO,'I') ESTADO_INSTITUCION
+          from POSTULACIONES A, INSTITUCIONES B
+         where LUNES_DESDE IS NOT NULL
+           and 'LUNES' = UPPER(TRANSLATE(TO_CHAR(trunc(SYSDATE - (3/24)), 'FMDAY', 'NLS_DATE_LANGUAGE=SPANISH'),'ÁÉÍÓÚÑÀÈÌÒÙÄËÏÖÜ','AEIOUNAEOUAEIOU'))
+           AND A.ID_INSTITUCION = B.ID_INSTITUCION
+        UNION ALL
+        -- MARTES
+        select A.ID_INSTITUCION, B.NOMBRE, A.ID_FACILITADOR, A.MARTES_DESDE, A.MARTES_HASTA, 'MARTES',
+               CASE WHEN "3" IS NOT NULL THEN '3º' WHEN "4" IS NOT NULL THEN '4º' WHEN "5" IS NOT NULL THEN '5º'
+                    WHEN "6" IS NOT NULL THEN '6º' WHEN "7" IS NOT NULL THEN '7º' WHEN "8" IS NOT NULL THEN '8º'
+                    WHEN "9" IS NOT NULL THEN '9º' WHEN "1M" IS NOT NULL THEN '1M' WHEN "2M" IS NOT NULL THEN '2M'
+                    WHEN "3M" IS NOT NULL THEN '3M' ELSE '0' END AS GRADO,
+               CASE WHEN SER IS NOT NULL THEN 'SER' WHEN HACER IS NOT NULL THEN 'HACER' WHEN TENER IS NOT NULL THEN 'TENER'
+                    WHEN CARACTER IS NOT NULL THEN 'CARACTER' WHEN VISION IS NOT NULL THEN 'VISION'
+                    WHEN CORAJE IS NOT NULL THEN 'CORAJE' WHEN LIDERAZGO IS NOT NULL THEN 'LIDERAZGO' ELSE '0' END AS MANUAL,
+               A.TURNO, A.ID_POSTULACION, A.SECCION, A.ID_ENFASIS,
+               CASE WHEN A.ESTADO IS NULL THEN 'Activo' ELSE A.ESTADO END,
+               A.ANIO, NVL(B.ESTADO,'I') ESTADO_INSTITUCION
+          from POSTULACIONES A, INSTITUCIONES B
+         where MARTES_DESDE IS NOT NULL
+           and 'MARTES' = UPPER(TRANSLATE(TO_CHAR(trunc(SYSDATE - (3/24)), 'FMDAY', 'NLS_DATE_LANGUAGE=SPANISH'),'ÁÉÍÓÚÑÀÈÌÒÙÄËÏÖÜ','AEIOUNAEOUAEIOU'))
+           AND A.ID_INSTITUCION = B.ID_INSTITUCION
+        UNION ALL
+        -- MIERCOLES
+        select A.ID_INSTITUCION, B.NOMBRE, A.ID_FACILITADOR, A.MIERCOLES_DESDE, A.MIERCOLES_HASTA, 'MIERCOLES',
+               CASE WHEN "3" IS NOT NULL THEN '3º' WHEN "4" IS NOT NULL THEN '4º' WHEN "5" IS NOT NULL THEN '5º'
+                    WHEN "6" IS NOT NULL THEN '6º' WHEN "7" IS NOT NULL THEN '7º' WHEN "8" IS NOT NULL THEN '8º'
+                    WHEN "9" IS NOT NULL THEN '9º' WHEN "1M" IS NOT NULL THEN '1M' WHEN "2M" IS NOT NULL THEN '2M'
+                    WHEN "3M" IS NOT NULL THEN '3M' ELSE '0' END AS GRADO,
+               CASE WHEN SER IS NOT NULL THEN 'SER' WHEN HACER IS NOT NULL THEN 'HACER' WHEN TENER IS NOT NULL THEN 'TENER'
+                    WHEN CARACTER IS NOT NULL THEN 'CARACTER' WHEN VISION IS NOT NULL THEN 'VISION'
+                    WHEN CORAJE IS NOT NULL THEN 'CORAJE' WHEN LIDERAZGO IS NOT NULL THEN 'LIDERAZGO' ELSE '0' END AS MANUAL,
+               A.TURNO, A.ID_POSTULACION, A.SECCION, A.ID_ENFASIS,
+               CASE WHEN A.ESTADO IS NULL THEN 'Activo' ELSE A.ESTADO END,
+               A.ANIO, NVL(B.ESTADO,'I') ESTADO_INSTITUCION
+          from POSTULACIONES A, INSTITUCIONES B
+         where MIERCOLES_DESDE IS NOT NULL
+           and 'MIERCOLES' = UPPER(TRANSLATE(TO_CHAR(trunc(SYSDATE - (3/24)), 'FMDAY', 'NLS_DATE_LANGUAGE=SPANISH'),'ÁÉÍÓÚÑÀÈÌÒÙÄËÏÖÜ','AEIOUNAEOUAEIOU'))
+           AND A.ID_INSTITUCION = B.ID_INSTITUCION
+        UNION ALL
+        -- JUEVES
+        select A.ID_INSTITUCION, B.NOMBRE, A.ID_FACILITADOR, A.JUEVES_DESDE, A.JUEVES_HASTA, 'JUEVES',
+               CASE WHEN "3" IS NOT NULL THEN '3º' WHEN "4" IS NOT NULL THEN '4º' WHEN "5" IS NOT NULL THEN '5º'
+                    WHEN "6" IS NOT NULL THEN '6º' WHEN "7" IS NOT NULL THEN '7º' WHEN "8" IS NOT NULL THEN '8º'
+                    WHEN "9" IS NOT NULL THEN '9º' WHEN "1M" IS NOT NULL THEN '1M' WHEN "2M" IS NOT NULL THEN '2M'
+                    WHEN "3M" IS NOT NULL THEN '3M' ELSE '0' END AS GRADO,
+               CASE WHEN SER IS NOT NULL THEN 'SER' WHEN HACER IS NOT NULL THEN 'HACER' WHEN TENER IS NOT NULL THEN 'TENER'
+                    WHEN CARACTER IS NOT NULL THEN 'CARACTER' WHEN VISION IS NOT NULL THEN 'VISION'
+                    WHEN CORAJE IS NOT NULL THEN 'CORAJE' WHEN LIDERAZGO IS NOT NULL THEN 'LIDERAZGO' ELSE '0' END AS MANUAL,
+               A.TURNO, A.ID_POSTULACION, A.SECCION, A.ID_ENFASIS,
+               CASE WHEN A.ESTADO IS NULL THEN 'Activo' ELSE A.ESTADO END,
+               A.ANIO, NVL(B.ESTADO,'I') ESTADO_INSTITUCION
+          from POSTULACIONES A, INSTITUCIONES B
+         where JUEVES_DESDE IS NOT NULL
+           and 'JUEVES' = UPPER(TRANSLATE(TO_CHAR(trunc(SYSDATE - (3/24)), 'FMDAY', 'NLS_DATE_LANGUAGE=SPANISH'),'ÁÉÍÓÚÑÀÈÌÒÙÄËÏÖÜ','AEIOUNAEOUAEIOU'))
+           AND A.ID_INSTITUCION = B.ID_INSTITUCION
+        UNION ALL
+        -- VIERNES
+        select A.ID_INSTITUCION, B.NOMBRE, A.ID_FACILITADOR, A.VIERNES_DESDE, A.VIERNES_HASTA, 'VIERNES',
+               CASE WHEN "3" IS NOT NULL THEN '3º' WHEN "4" IS NOT NULL THEN '4º' WHEN "5" IS NOT NULL THEN '5º'
+                    WHEN "6" IS NOT NULL THEN '6º' WHEN "7" IS NOT NULL THEN '7º' WHEN "8" IS NOT NULL THEN '8º'
+                    WHEN "9" IS NOT NULL THEN '9º' WHEN "1M" IS NOT NULL THEN '1M' WHEN "2M" IS NOT NULL THEN '2M'
+                    WHEN "3M" IS NOT NULL THEN '3M' ELSE '0' END AS GRADO,
+               CASE WHEN SER IS NOT NULL THEN 'SER' WHEN HACER IS NOT NULL THEN 'HACER' WHEN TENER IS NOT NULL THEN 'TENER'
+                    WHEN CARACTER IS NOT NULL THEN 'CARACTER' WHEN VISION IS NOT NULL THEN 'VISION'
+                    WHEN CORAJE IS NOT NULL THEN 'CORAJE' WHEN LIDERAZGO IS NOT NULL THEN 'LIDERAZGO' ELSE '0' END AS MANUAL,
+               A.TURNO, A.ID_POSTULACION, A.SECCION, A.ID_ENFASIS,
+               CASE WHEN A.ESTADO IS NULL THEN 'Activo' ELSE A.ESTADO END,
+               A.ANIO, NVL(B.ESTADO,'I') ESTADO_INSTITUCION
+          from POSTULACIONES A, INSTITUCIONES B
+         where A.VIERNES_DESDE IS NOT NULL
+           and 'VIERNES' = UPPER(TRANSLATE(TO_CHAR(trunc(SYSDATE - (3/24)), 'FMDAY', 'NLS_DATE_LANGUAGE=SPANISH'),'ÁÉÍÓÚÑÀÈÌÒÙÄËÏÖÜ','AEIOUNAEOUAEIOU'))
+           AND A.ID_INSTITUCION = B.ID_INSTITUCION
+       )
+ order by HORA_DESDE asc
+/
 
 --------------------------------------------------------------------------------
 -- 1. PAQUETE
@@ -160,7 +273,7 @@ BEGIN
     BEGIN
         SELECT a.ID_INSTITUCION
           INTO l_default
-          FROM V_INSTITUCIONES a
+          FROM V_INSTITUCIONES_APP_ETHOS a
          WHERE a.id_facilitador = l_fac
            AND NOT EXISTS (
                  SELECT 1
@@ -192,7 +305,7 @@ BEGIN
     IF l_fac IS NOT NULL THEN
         FOR r IN (
             SELECT DISTINCT a.NOMBRE, a.ID_INSTITUCION
-              FROM V_INSTITUCIONES a
+              FROM V_INSTITUCIONES_APP_ETHOS a
              WHERE a.id_facilitador = l_fac
                AND NVL(A.ESTADO, 'Activo') = 'Activo'
                AND A.ANIO = FN_ANIO_LECTIVO_ACTUAL()
@@ -241,7 +354,7 @@ BEGIN
     FOR r IN (
         SELECT TO_CHAR(a.hora_desde, 'hh24:mi') || '-' || TO_CHAR(a.hora_hasta, 'hh24:mi') horario,
                a.id_postulacion
-          FROM V_INSTITUCIONES a
+          FROM V_INSTITUCIONES_APP_ETHOS a
          WHERE a.ID_INSTITUCION = p_id_institucion
            AND a.ID_FACILITADOR = l_fac
            AND NVL(A.ESTADO, 'Activo') = 'Activo'
@@ -274,7 +387,7 @@ BEGIN
 
     -- LOV de P2_GRADO
     APEX_JSON.OPEN_ARRAY('grados');
-    FOR r IN (SELECT grado FROM V_INSTITUCIONES
+    FOR r IN (SELECT grado FROM V_INSTITUCIONES_APP_ETHOS
                WHERE ID_INSTITUCION = p_id_institucion AND NVL(ESTADO, 'Activo') = 'Activo'
                  AND ID_FACILITADOR = l_fac AND id_postulacion = p_id_postulacion
                  AND ANIO = FN_ANIO_LECTIVO_ACTUAL()) LOOP
@@ -284,7 +397,7 @@ BEGIN
 
     -- LOV de P2_SECCION
     APEX_JSON.OPEN_ARRAY('secciones');
-    FOR r IN (SELECT seccion FROM V_INSTITUCIONES
+    FOR r IN (SELECT seccion FROM V_INSTITUCIONES_APP_ETHOS
                WHERE ID_INSTITUCION = p_id_institucion AND NVL(ESTADO, 'Activo') = 'Activo'
                  AND ID_FACILITADOR = l_fac AND id_postulacion = p_id_postulacion
                  AND ANIO = FN_ANIO_LECTIVO_ACTUAL()) LOOP
@@ -295,7 +408,7 @@ BEGIN
     -- LOV de P2_TURNO
     APEX_JSON.OPEN_ARRAY('turnos');
     FOR r IN (SELECT DECODE(turno, 1, UNISTR('Ma\00F1ana'), 2, 'Tarde', 3, 'Noche') descripcion, turno
-                FROM V_INSTITUCIONES
+                FROM V_INSTITUCIONES_APP_ETHOS
                WHERE ID_INSTITUCION = p_id_institucion AND NVL(ESTADO, 'Activo') = 'Activo'
                  AND ID_FACILITADOR = l_fac AND id_postulacion = p_id_postulacion
                  AND ANIO = FN_ANIO_LECTIVO_ACTUAL()) LOOP
@@ -309,7 +422,7 @@ BEGIN
     -- LOV de P2_ID_ENFASIS
     APEX_JSON.OPEN_ARRAY('enfasis');
     FOR r IN (SELECT b.descripcion, a.id_enfasis
-                FROM V_INSTITUCIONES a, enfasis b
+                FROM V_INSTITUCIONES_APP_ETHOS a, enfasis b
                WHERE ID_INSTITUCION = p_id_institucion
                  AND ID_FACILITADOR = l_fac
                  AND id_postulacion = p_id_postulacion
@@ -325,7 +438,7 @@ BEGIN
 
     -- LOV de P2_MANUAL
     APEX_JSON.OPEN_ARRAY('manuales');
-    FOR r IN (SELECT MANUAL FROM V_INSTITUCIONES
+    FOR r IN (SELECT MANUAL FROM V_INSTITUCIONES_APP_ETHOS
                WHERE ID_INSTITUCION = p_id_institucion AND ID_FACILITADOR = l_fac
                  AND id_postulacion = p_id_postulacion AND NVL(ESTADO, 'Activo') = 'Activo'
                  AND ANIO = FN_ANIO_LECTIVO_ACTUAL()) LOOP
@@ -350,7 +463,7 @@ BEGIN
 
     -- La postulacion tiene que ser del facilitador del token: nunca se listan
     -- indices de la postulacion de otro.
-    SELECT COUNT(*) INTO l_propia FROM V_INSTITUCIONES
+    SELECT COUNT(*) INTO l_propia FROM V_INSTITUCIONES_APP_ETHOS
      WHERE id_postulacion = p_id_postulacion AND ID_FACILITADOR = l_fac;
 
     -- Default de P2_ID_INDICE, tal cual la pagina (primer fila del SELECT).
@@ -571,7 +684,7 @@ BEGIN
 
     -- Cada valor tiene que estar en su LOV (como valida APEX las listas):
     -- tambien garantiza que la postulacion es del facilitador del token.
-    SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES a
+    SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES_APP_ETHOS a
      WHERE a.id_facilitador = l_fac AND a.ID_INSTITUCION = p_id_institucion
        AND NVL(A.ESTADO, 'Activo') = 'Activo' AND A.ANIO = FN_ANIO_LECTIVO_ACTUAL()
        AND NVL(A.ESTADO_INSTITUCION, 'I') = 'A'
@@ -581,7 +694,7 @@ BEGIN
                           AND b.fecha_hora < TRUNC(SYSDATE + 1));
     IF fuera_de_lista(l_n > 0, 'id_institucion', UNISTR('La instituci\00F3n')) THEN RETURN; END IF;
 
-    SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES a
+    SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES_APP_ETHOS a
      WHERE a.ID_INSTITUCION = p_id_institucion AND a.ID_FACILITADOR = l_fac
        AND a.id_postulacion = p_id_postulacion
        AND NVL(A.ESTADO, 'Activo') = 'Activo' AND A.ANIO = FN_ANIO_LECTIVO_ACTUAL()
@@ -590,35 +703,35 @@ BEGIN
                           AND b.ID_POSTULACION = a.id_postulacion);
     IF fuera_de_lista(l_n > 0, 'id_postulacion', 'El horario') THEN RETURN; END IF;
 
-    SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES
+    SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES_APP_ETHOS
      WHERE ID_INSTITUCION = p_id_institucion AND ID_FACILITADOR = l_fac AND id_postulacion = p_id_postulacion
        AND NVL(ESTADO, 'Activo') = 'Activo' AND ANIO = FN_ANIO_LECTIVO_ACTUAL()
        AND grado = p_grado;
     IF fuera_de_lista(l_n > 0, 'grado', 'El grado') THEN RETURN; END IF;
 
     IF p_seccion IS NOT NULL THEN
-        SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES
+        SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES_APP_ETHOS
          WHERE ID_INSTITUCION = p_id_institucion AND ID_FACILITADOR = l_fac AND id_postulacion = p_id_postulacion
            AND NVL(ESTADO, 'Activo') = 'Activo' AND ANIO = FN_ANIO_LECTIVO_ACTUAL()
            AND seccion = p_seccion;
         IF fuera_de_lista(l_n > 0, 'seccion', UNISTR('La secci\00F3n')) THEN RETURN; END IF;
     END IF;
 
-    SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES
+    SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES_APP_ETHOS
      WHERE ID_INSTITUCION = p_id_institucion AND ID_FACILITADOR = l_fac AND id_postulacion = p_id_postulacion
        AND NVL(ESTADO, 'Activo') = 'Activo' AND ANIO = FN_ANIO_LECTIVO_ACTUAL()
        AND turno = p_turno;
     IF fuera_de_lista(l_n > 0, 'turno', 'El turno') THEN RETURN; END IF;
 
     IF p_id_enfasis IS NOT NULL THEN
-        SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES
+        SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES_APP_ETHOS
          WHERE ID_INSTITUCION = p_id_institucion AND ID_FACILITADOR = l_fac AND id_postulacion = p_id_postulacion
            AND NVL(ESTADO, 'Activo') = 'Activo' AND ANIO = FN_ANIO_LECTIVO_ACTUAL()
            AND id_enfasis = p_id_enfasis;
         IF fuera_de_lista(l_n > 0, 'id_enfasis', UNISTR('El \00E9nfasis')) THEN RETURN; END IF;
     END IF;
 
-    SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES
+    SELECT COUNT(*) INTO l_n FROM V_INSTITUCIONES_APP_ETHOS
      WHERE ID_INSTITUCION = p_id_institucion AND ID_FACILITADOR = l_fac AND id_postulacion = p_id_postulacion
        AND NVL(ESTADO, 'Activo') = 'Activo' AND ANIO = FN_ANIO_LECTIVO_ACTUAL()
        AND MANUAL = p_manual;
@@ -828,5 +941,18 @@ BEGIN
      AND t.URI_TEMPLATE LIKE 'mis-intervenciones%'
      AND DBMS_LOB.INSTR(h.SOURCE, 'PKG_INTERVENCIONES_APP_ETHOS') > 0;
   DBMS_OUTPUT.PUT_LINE('[INFO] Handlers de mis-intervenciones publicados: ' || l_n || ' de 7.');
+END;
+/
+
+-- La copia tiene que traer lo mismo que V_INSTITUCIONES en una sesion en espanol (APEX).
+DECLARE
+  l_original NUMBER;
+  l_app      NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO l_original FROM V_INSTITUCIONES;
+  SELECT COUNT(*) INTO l_app      FROM V_INSTITUCIONES_APP_ETHOS;
+  DBMS_OUTPUT.PUT_LINE('[INFO] Clases de hoy: V_INSTITUCIONES = ' || l_original
+    || ' / V_INSTITUCIONES_APP_ETHOS = ' || l_app
+    || CASE WHEN l_original = l_app THEN '  (iguales)' ELSE '  (DIFERENTES: avisar antes de usar la app)' END);
 END;
 /

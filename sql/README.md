@@ -104,6 +104,12 @@ Validaciones del POST:
 
 `FECHA_HORA` (hora de Paraguay, `SYSDATE - 3/24`), `ANIO`, `ID_AUDITORIA` y la finalización de la postulación los ponen los triggers de `INTERVENCIONES`, como con APEX. La auditoría registra al usuario del token, porque `validar_token` lo deja en `CLIENT_IDENTIFIER`.
 
+**`V_INSTITUCIONES_APP_ETHOS`.** La página 2 lee `V_INSTITUCIONES`, que solo trae las clases del día de hoy y compara el día con `TO_CHAR(.., 'FMDAY')`. Ese nombre sale en el idioma de la sesión: en APEX es "VIERNES", pero en ORDS es "FRIDAY", así que desde la app la vista quedaba vacía y Marcar no mostraba instituciones.
+- Para no tocar nada de APEX, el script crea **`V_INSTITUCIONES_APP_ETHOS`**: una copia exacta de `V_INSTITUCIONES` con el día calculado con `NLS_DATE_LANGUAGE=SPANISH`. El paquete lee esa copia; `V_INSTITUCIONES` queda intacta para APEX.
+- Al final, el script compara cuántas clases de hoy trae cada vista. Tienen que ser iguales.
+- Si alguna vez cambia `V_INSTITUCIONES`, hay que repetir el cambio en la copia.
+- [diagnostico_marcar.sql](diagnostico_marcar.sql): de solo lectura, explica por qué una institución no aparece en Marcar para un usuario. Usa `V_INSTITUCIONES`, o sea, lo que ve APEX.
+
 ## Autenticación (`PKG_AUTH_ETHOS`)
 
 | Método | Ruta | Envía | Responde |
