@@ -5,7 +5,8 @@ import { ArrowUpRight, BookOpen, Download, FileText, Share2 } from 'lucide-react
 import { materialIndex, materials, type Material } from '../data';
 import { Grade, SchoolLine } from '../lesson-card';
 import { useLayout } from '../shell';
-import { colors, radius } from '../theme';
+import { radius } from '../theme';
+import { makeStyles, useTheme } from '../theme-provider';
 import { Badge, Button, Card, Modal, ModalActions, ModalText, PageTitle, StatIcon, Text } from '../ui';
 
 const filters = ['Todos', 'Manuales', 'Índices'] as const;
@@ -31,6 +32,8 @@ async function exportIndex(m: Material) {
 }
 
 export function MaterialsScreen() {
+  const { colors } = useTheme();
+  const s = useStyles();
   const { desktop, wide } = useLayout();
   const [filter, setFilter] = useState<Filter>('Todos');
   const [selected, setSelected] = useState<Material | null>(null);
@@ -59,7 +62,7 @@ export function MaterialsScreen() {
           <Card key={m.title} style={[s.card, { width: columns === 1 ? '100%' : columns === 2 ? '48.5%' : '31.8%' }]}>
             <View style={s.row}>
               <StatIcon icon={FileText} size={36} />
-              <Badge tone="teal" label="Desarrollado" />
+              <Badge tone="success" label="Desarrollado" />
             </View>
             <Text weight="bold" size={15} style={{ marginTop: 18, marginBottom: 10 }}>
               {m.title}
@@ -85,11 +88,7 @@ export function MaterialsScreen() {
             <ModalText strong>Índice de contenidos</ModalText>
             <ModalText>{materialIndex.join('\n')}</ModalText>
             <ModalActions>
-              <Button
-                icon={Platform.OS === 'web' ? Download : Share2}
-                label={Platform.OS === 'web' ? 'Descargar índice' : 'Compartir índice'}
-                onPress={() => void exportIndex(selected)}
-              />
+              <Button icon={Platform.OS === 'web' ? Download : Share2} label={Platform.OS === 'web' ? 'Descargar índice' : 'Compartir índice'} onPress={() => void exportIndex(selected)} />
             </ModalActions>
           </>
         )}
@@ -98,10 +97,22 @@ export function MaterialsScreen() {
   );
 }
 
-const s = StyleSheet.create({
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md },
-  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginBottom: 25 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 18 },
-  card: { padding: 22 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-});
+const useStyles = makeStyles((colors) =>
+  StyleSheet.create({
+    pill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 9,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      backgroundColor: colors.card,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: radius.md,
+    },
+    filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginBottom: 25 },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 18 },
+    card: { padding: 22 },
+    row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  }),
+);

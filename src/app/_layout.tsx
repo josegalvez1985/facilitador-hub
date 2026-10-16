@@ -10,12 +10,31 @@ import { PlusJakartaSans_600SemiBold } from '@expo-google-fonts/plus-jakarta-san
 import { PlusJakartaSans_700Bold } from '@expo-google-fonts/plus-jakarta-sans/700Bold';
 import { PlusJakartaSans_800ExtraBold } from '@expo-google-fonts/plus-jakarta-sans/800ExtraBold';
 
+import { SessionProvider } from '@/facilitadores/auth/session';
 import { FacilitadoresProvider } from '@/facilitadores/provider';
-import { colors } from '@/facilitadores/theme';
+import { ThemeProvider, useTheme } from '@/facilitadores/theme-provider';
+import { ToastProvider } from '@/facilitadores/toast';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  return (
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <SessionProvider>
+            <FacilitadoresProvider>
+              <ThemedApp />
+            </FacilitadoresProvider>
+          </SessionProvider>
+        </ToastProvider>
+      </ThemeProvider>
+    </SafeAreaProvider>
+  );
+}
+
+function ThemedApp() {
+  const { colors, scheme, ready } = useTheme();
   const [loaded, error] = useFonts({
     PlusJakartaSans_400Regular,
     PlusJakartaSans_500Medium,
@@ -23,22 +42,22 @@ export default function RootLayout() {
     PlusJakartaSans_700Bold,
     PlusJakartaSans_800ExtraBold,
   });
+  const fontsDone = loaded || !!error;
 
+  // La pantalla de carga se mantiene hasta tener fuentes y la preferencia de tema guardada.
   useEffect(() => {
-    if (loaded || error) SplashScreen.hideAsync();
-  }, [loaded, error]);
+    if (fontsDone && ready) SplashScreen.hideAsync();
+  }, [fontsDone, ready]);
 
-  if (!loaded && !error) return null;
+  if (!fontsDone || !ready) return null;
 
   return (
-    <SafeAreaProvider>
-      <FacilitadoresProvider>
-        <StatusBar style="dark" />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
-          <Stack.Screen name="(app)" />
-          <Stack.Screen name="login" options={{ title: 'Ingresar · Facilitadores' }} />
-        </Stack>
-      </FacilitadoresProvider>
-    </SafeAreaProvider>
+    <>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+        <Stack.Screen name="(app)" />
+        <Stack.Screen name="login" options={{ title: 'Ingresar · Facilitadores' }} />
+      </Stack>
+    </>
   );
 }

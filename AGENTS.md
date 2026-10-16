@@ -3,5 +3,41 @@
 - Install dependencies with `npx expo install <package>` so versions match the Expo SDK. Expo APIs change between SDKs: check https://docs.expo.dev/versions/v58.0.0/ instead of relying on memory.
 - Store frontend demonstration state in the shared Facilitadores provider (`src/facilitadores/provider.tsx`), never present it as authenticated or durably saved data.
 - Keep content sections in distinct file routes under `src/app/` and use the shared shell (`src/facilitadores/shell.tsx`) for navigation so desktop, web mobile and native stay consistent.
+- Navigation is defined by the `nav` array in `shell.tsx`. Add new sections there and they show up in both the desktop sidebar and the mobile **Menú** sheet.
+  - The mobile bottom bar is fixed by the user's request: Inicio · Marcar · Menú · Perfil · Salir. Do not add sections to it.
+  - Nothing is removed from navigation: every section stays reachable from Menú.
+- Never hard-code colors: read them from `useTheme().colors` or build styles with `makeStyles((c) => StyleSheet.create(...))` from `src/facilitadores/theme-provider.tsx`, so the 6 color themes and light/dark mode apply everywhere. New theme colors must keep WCAG AA contrast (the test in `__tests__/app.test.tsx` checks it).
+- Dates are always the device's current date: use `src/facilitadores/fechas.ts` (`hoy()`, `fechaLarga()`, `semanaDe()`…), never hard-coded dates or `toLocaleDateString` (Hermes locale support varies).
+- The product name is shown as "facilitadores", without a trailing period.
 - Keep non-route code out of `src/app/`. Tests live in `__tests__/`.
+- Tests use a simulated backend. By default `fetchMock` answers `mi-facilitador` (facilitator 7). Use `responder(...)` for one-off responses, `entrar()` to log in, and `llamadaA('fragmento')` to assert on a request by URL rather than by call order. Register every new route in the `routes` map of `__tests__/app.test.tsx`.
 - Before finishing a change run `npm run typecheck`, `npm run lint` and `npm test`.
+
+## Backend (Oracle APEX / ORDS)
+- The app uses the published ORDS module `ethos` (schema `WKSP_FUNDCARAC`, APEX workspace `FUNDCARAC`, same users as the previous system). Login comes from `PKG_AUTH_ETHOS` / `ETHOS_TOKENS`, and the business endpoints validate that same token.
+- `sql/README.md` documents the contract and indexes every published endpoint (agendas, intervenciones-crud with latitude/longitude, listas, evaluaciones…). `sql/ords_modulo_ethos_export.sql` is the source of truth for handler signatures, though it was exported truncated.
+- `sql/auth_facilitadores.sql` is an unused, unpublished alternative. Do not point the app at the `facilitadores` module, because its tokens are rejected by the `ethos` business endpoints.
+- The base URL comes from `EXPO_PUBLIC_API_URL` in `.env` (`https://oracleapex.com/ords/fundcarac/ethos/`). Expo inlines it at build time, so changing it needs a dev server restart with `npx expo start --clear`, or a new APK/PWA build.
+- There is one active token per user, shared with the previous system: logging in on one side ends the session on the other. The app handles it as an invalid token: one "Tu sesión se cerró" notice, then back to login.
+- Every protected call goes through `authFetch` in `src/facilitadores/auth/api.ts`. Never call `fetch` with an `Authorization` header directly.
+- Facilitator isolation (mandatory): records of one facilitator or user must never mix with another's.
+  - The logged user's `ID_FACILITADOR` is a global session value, mirroring APEX's `SELECT ID_FACILITADOR FROM FACILITADORES WHERE USUARIO = :APP_USER`. Read it from `useSession().facilitador`. It is resolved once per token from `GET mi-facilitador` in `src/facilitadores/auth/facilitador.ts`.
+  - Facilitator data endpoints derive the id from the token on the server (`PKG_FACILITADOR_APP_ETHOS`, `sql/facilitador_app_ethos.sql`); the client never sends a facilitator id.
+  - If an older endpoint does take `id_facilitador`, send the session id and pass the rows through `soloDelFacilitador()`.
+  - If the id is `null` (the user is not a facilitator) or not resolved yet, screens must not request data. Never fall back to listing "all".
+  - When a port needs a table structure, package code or response shape that isn't in `sql/`, ask the user for it instead of guessing.
+- This app modernizes Oracle APEX app 193573 "Facilitadores", one page at a time. The user provides the APEX page export as the spec. When porting a page:
+  - Keep its SQL semantics exactly (filters, grouping, `HAVING`, joins, ordering), and cite the original page in a comment.
+  - Reuse a published `ethos` endpoint when one returns what the page needs.
+  - Otherwise add a procedure to `PKG_FACILITADOR_APP_ETHOS` in `sql/facilitador_app_ethos.sql` that runs the page's query with the id taken from the token, and publish it as a GET handler with its `Authorization` header parameter. Never call `ORDS.DEFINE_MODULE` there: it would wipe the published module.
+  - Backend scripts are run by the user in APEX. Say clearly when a change needs one, and never assume it was run.
+  - Add the screen under `src/app/(app)/`, its entry in the `nav` array of `shell.tsx`, and a row in the README "Modernización" table.
+  - Pages done so far: 11 Evaluaciones (`/evaluaciones`, `mis-evaluaciones`); 2 Intervención (`/marcar`, `mis-intervenciones/*` in `PKG_INTERVENCIONES_APP_ETHOS`, `sql/intervenciones_app_ethos.sql`); 3 Agenda (`/horarios`, `mi-agenda` in `PKG_AGENDA_APP_ETHOS`, `sql/agenda_app_ethos.sql`).
+- Session rules, which are deliberate and must not be "fixed":
+  - The token lives only in memory. Never persist it; reopening the app returns to the login.
+  - "No network" (`SinConexion`) never ends the session.
+  - Token-invalid detection (401, or 200 with `success:false` and a "token inválido/expirado" message) runs before `res.ok`.
+  - Remembered credentials are saved only after a successful login, in SecureStore on native and localStorage on the PWA, and logout does not clear them.
+- The route guard (`RequiereSesion`) wraps `src/app/(app)/_layout.tsx` once. New protected screens go inside `(app)/` and need no extra checks.
+- If `EXPO_PUBLIC_API_URL` is missing or a placeholder, `api.ts` falls back to the `ethos` URL (`API_POR_DEFECTO`).
+- ORDS answers browser CORS preflights itself. A "blocked by CORS policy" error almost always means a 404 URL (wrong path or unpublished module), not missing CORS. Send DELETE without a body or `Content-Type`, because ORDS answers 400 otherwise.

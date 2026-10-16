@@ -1,0 +1,755 @@
+--------------------------------------------------------------------------------
+-- NO CORRER. Solo referencia: la app usa el modulo 'ethos' ya publicado
+-- (ver sql/README.md). Este script crearia objetos nuevos que nadie usa.
+--------------------------------------------------------------------------------
+-- Facilitadores — Autenticacion completa (Oracle APEX / ORDS)
+--------------------------------------------------------------------------------
+-- Script UNICO y idempotente: se puede volver a correr sin romper nada.
+-- Contiene, en este orden:
+--
+--   1. Tabla FACILITADORES_TOKENS + indices
+--   2. Job de purga de tokens vencidos (opcional, no aborta si falta privilegio)
+--   3. Paquete PKG_AUTH_FACILITADORES (spec + body)
+--   4. Endpoints ORDS del modulo 'facilitadores': auth/login, auth/logout, auth/me
+--   5. Verificacion final (imprime la URL base real)
+--
+-- COMO CORRERLO
+--   APEX -> SQL Workshop -> SQL Scripts -> Upload -> Run.
+--   Hay que ejecutarlo con el usuario DUEÑO del esquema (el del workspace),
+--   no como SYS. Ver la salida de DBMS_OUTPUT al final.
+--
+-- WORKSPACE
+--   Tomado de la URL del proyecto:
+--   https://oracleapex.com/ords/r/fundcarac/juventud-con-valores/login
+--                                  ^^^^^^^^ path prefix del workspace
+--   Si el nombre real del workspace no es FUNDCARAC, cambia c_workspace en
+--   PKG_AUTH_FACILITADORES (seccion 3). El bloque de verificacion (seccion 5) lo valida
+--   y te avisa si no coincide.
+--
+-- QUIENES SON LOS USUARIOS
+--   Los usuarios del WORKSPACE APEX (Administration -> Manage Users).
+--   Si Facilitadores va a tener su propia tabla de usuarios, la UNICA funcion
+--   a reescribir es PKG_AUTH_FACILITADORES.credenciales_validas (hay un ejemplo
+--   comentado ahi mismo). Nada mas cambia.
+--------------------------------------------------------------------------------
+
+SET SERVEROUTPUT ON
+SET DEFINE OFF
+
+--------------------------------------------------------------------------------
+-- 1. TABLA DE TOKENS
+--------------------------------------------------------------------------------
+-- Token opaco guardado en tabla (no JWT): simple, revocable y sin librerias.
+
+BEGIN
+  EXECUTE IMMEDIATE q'~
+    CREATE TABLE FACILITADORES_TOKENS (
+        TOKEN             VARCHAR2(128) NOT NULL,
+        USUARIO           VARCHAR2(255) NOT NULL,
+        FECHA_CREACION    TIMESTAMP     DEFAULT SYSTIMESTAMP NOT NULL,
+        FECHA_EXPIRACION  TIMESTAMP     NOT NULL,
+        ACTIVO            CHAR(1)       DEFAULT 'S' NOT NULL,
+        CONSTRAINT PK_FACILITADORES_TOKENS PRIMARY KEY (TOKEN),
+        CONSTRAINT CK_FACILITADORES_TOKENS_ACT CHECK (ACTIVO IN ('S','N'))
+    )~';
+  DBMS_OUTPUT.PUT_LINE('[OK]   Tabla FACILITADORES_TOKENS creada.');
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE = -955 THEN                       -- ORA-00955: ya existe
+      DBMS_OUTPUT.PUT_LINE('[SKIP] Tabla FACILITADORES_TOKENS ya existia.');
+    ELSE
+      RAISE;
+    END IF;
+END;
+/
+
+-- Indice del camino caliente: validar_token corre en CADA request protegido.
+BEGIN
+  EXECUTE IMMEDIATE
+    'CREATE INDEX IX_FACILITADORES_TOKENS_ACT ON FACILITADORES_TOKENS (TOKEN, ACTIVO, FECHA_EXPIRACION)';
+EXCEPTION
+  WHEN OTHERS THEN IF SQLCODE NOT IN (-955, -1408) THEN RAISE; END IF;
+END;
+/
+
+BEGIN
+  EXECUTE IMMEDIATE
+    'CREATE INDEX IX_FACILITADORES_TOKENS_USR ON FACILITADORES_TOKENS (USUARIO, ACTIVO)';
+EXCEPTION
+  WHEN OTHERS THEN IF SQLCODE NOT IN (-955, -1408) THEN RAISE; END IF;
+END;
+/
+
+--------------------------------------------------------------------------------
+-- 2. PURGA DE TOKENS VIEJOS
+--------------------------------------------------------------------------------
+-- La tabla crece con cada login. Borra lo vencido hace mas de 7 dias, 3 AM.
+-- Si el usuario no tiene CREATE JOB, esto se salta sin abortar el script.
+
+BEGIN
+  BEGIN
+    DBMS_SCHEDULER.DROP_JOB('JOB_PURGAR_FACILITADORES_TOKENS', force => TRUE);
+  EXCEPTION WHEN OTHERS THEN NULL;
+  END;
+
+  DBMS_SCHEDULER.CREATE_JOB(
+    job_name        => 'JOB_PURGAR_FACILITADORES_TOKENS',
+    job_type        => 'PLSQL_BLOCK',
+    job_action      => 'BEGIN DELETE FROM FACILITADORES_TOKENS WHERE FECHA_EXPIRACION < SYSTIMESTAMP - 7; COMMIT; END;',
+    start_date      => SYSTIMESTAMP,
+    repeat_interval => 'FREQ=DAILY;BYHOUR=3',
+    enabled         => TRUE);
+
+  DBMS_OUTPUT.PUT_LINE('[OK]   Job JOB_PURGAR_FACILITADORES_TOKENS programado (diario 3 AM).');
+EXCEPTION
+  WHEN OTHERS THEN
+    DBMS_OUTPUT.PUT_LINE('[WARN] No se pudo crear el job de purga: ' || SQLERRM);
+    DBMS_OUTPUT.PUT_LINE('       No es bloqueante. Purga manual:');
+    DBMS_OUTPUT.PUT_LINE('       DELETE FROM FACILITADORES_TOKENS WHERE FECHA_EXPIRACION < SYSTIMESTAMP - 7;');
+END;
+/
+
+--------------------------------------------------------------------------------
+-- 3. PAQUETE PKG_AUTH_FACILITADORES
+--------------------------------------------------------------------------------
+
+CREATE OR REPLACE PACKAGE PKG_AUTH_FACILITADORES AS
+
+  -- Valida credenciales y, si son correctas, emite un token nuevo.
+  -- Escribe la respuesta JSON directamente (lo llama el handler ORDS).
+  PROCEDURE login(p_usuario IN VARCHAR2, p_password IN VARCHAR2);
+
+  -- Desactiva el token (cierre de sesion explicito).
+  PROCEDURE logout(p_token IN VARCHAR2);
+
+  -- Datos del usuario dueño del token. 401 si el token no sirve.
+  -- El front la usa al arrancar para saber si la sesion guardada sigue viva.
+  PROCEDURE perfil(p_token IN VARCHAR2);
+
+  -- Devuelve el usuario dueño del token, o NULL si es invalido/expirado.
+  -- La usan TODOS los paquetes de negocio para autorizar.
+  --
+  -- Ademas deja ese usuario en CLIENT_IDENTIFIER (o lo limpia, si el token no
+  -- sirve): es de donde los triggers de auditoria sacan QUIEN hizo el cambio.
+  -- Ver fijar_identificador en el body.
+  FUNCTION validar_token(p_token IN VARCHAR2) RETURN VARCHAR2;
+
+END PKG_AUTH_FACILITADORES;
+/
+
+CREATE OR REPLACE PACKAGE BODY PKG_AUTH_FACILITADORES AS
+
+  -- Path prefix del workspace APEX. Ver el encabezado del script.
+  c_workspace CONSTANT VARCHAR2(64) := 'FUNDCARAC';
+
+  -- Vigencia del token emitido en LOGIN.
+  c_horas_token CONSTANT NUMBER := 6;
+
+------------------------------------------------------------------------------
+-- Helpers de respuesta
+------------------------------------------------------------------------------
+
+-- Abre la respuesta HTTP en JSON.
+-- CORS abierto, y OBLIGATORIO: la PWA (iOS, navegador) y el desarrollo local
+-- (npm run dev en web, http://localhost:8081) le pegan DIRECTO a ORDS desde el
+-- navegador. El APK no lo necesita, pero no le molesta.
+-- Cerrarlo deja sin login a la PWA.
+PROCEDURE abrir_json IS
+BEGIN
+    OWA_UTIL.MIME_HEADER('application/json', FALSE);
+    HTP.P('Access-Control-Allow-Origin: *');
+    HTP.P('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    HTP.P('Access-Control-Allow-Headers: Authorization, Content-Type');
+    HTP.P('Access-Control-Max-Age: 86400');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+END abrir_json;
+
+-- Error con status HTTP real.
+-- OJO con el orden: STATUS_LINE va ANTES de MIME_HEADER. Si se invierte, la
+-- respuesta ya esta abierta y el status se pierde (queda 200 con success:false).
+PROCEDURE p_error(
+    p_status  IN NUMBER,
+    p_reason  IN VARCHAR2,
+    p_message IN VARCHAR2
+) IS
+BEGIN
+    OWA_UTIL.STATUS_LINE(p_status, p_reason, FALSE);
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', FALSE);
+    APEX_JSON.WRITE('message', p_message);
+    APEX_JSON.CLOSE_OBJECT;
+END p_error;
+
+------------------------------------------------------------------------------
+-- Quien esta usando la app, para la auditoria
+------------------------------------------------------------------------------
+
+-- Deja el usuario del token en CLIENT_IDENTIFIER, o lo limpia con NULL.
+--
+-- POR QUE: los triggers de auditoria (los AUDITORIA_* que genera
+-- pr_crear_trigger_auditoria, ver auditoria.sql) anotan
+-- NVL(V('APP_USER'), NVL(CLIENT_IDENTIFIER, USER)). Desde ORDS no hay sesion
+-- APEX y V('APP_USER') es NULL: sin esto, todo lo que se edita desde la app
+-- nueva queda en la bitacora a nombre del esquema.
+--
+-- POR QUE TAMBIEN SE LIMPIA: ORDS reusa las sesiones de base entre requests.
+-- Un token invalido que no borrara el identificador dejaria puesto el del
+-- request anterior —de otra persona— y un DML posterior quedaria a su nombre.
+--
+-- Va aca y no en cada paquete porque TODO request protegido pasa por
+-- validar_token: un modulo nuevo queda cubierto sin acordarse de nada.
+--
+-- Nunca rompe el request: sin permiso sobre DBMS_SESSION se pierde el rastro
+-- del usuario, no la operacion.
+PROCEDURE fijar_identificador(p_usuario IN VARCHAR2) IS
+BEGIN
+    IF p_usuario IS NULL THEN
+        DBMS_SESSION.CLEAR_IDENTIFIER;
+    ELSE
+        DBMS_SESSION.SET_IDENTIFIER(SUBSTR(p_usuario, 1, 64));
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END fijar_identificador;
+
+------------------------------------------------------------------------------
+-- Credenciales
+------------------------------------------------------------------------------
+
+FUNCTION generar_token RETURN VARCHAR2 IS
+BEGIN
+    RETURN UPPER(RAWTOHEX(SYS_GUID()) || RAWTOHEX(SYS_GUID()));
+END generar_token;
+
+-- Deja el contexto de seguridad apuntando al workspace. Necesario para
+-- IS_LOGIN_PASSWORD_VALID y para leer APEX_WORKSPACE_APEX_USERS.
+PROCEDURE fijar_workspace IS
+    l_security_group_id NUMBER;
+BEGIN
+    l_security_group_id := APEX_UTIL.FIND_SECURITY_GROUP_ID(p_workspace => c_workspace);
+    APEX_UTIL.SET_SECURITY_GROUP_ID(p_security_group_id => l_security_group_id);
+END fijar_workspace;
+
+-- Valida contra los usuarios del workspace APEX.
+--
+-- ESTE es el unico punto a cambiar si Facilitadores pasa a tener su propia
+-- tabla de usuarios. Ejemplo con tabla propia y hash:
+--
+--   FUNCTION credenciales_validas(p_usuario IN VARCHAR2, p_password IN VARCHAR2)
+--   RETURN BOOLEAN IS
+--       l_hash FACILITADORES_USUARIOS.PASSWORD_HASH%TYPE;
+--   BEGIN
+--       SELECT PASSWORD_HASH INTO l_hash
+--         FROM FACILITADORES_USUARIOS
+--        WHERE UPPER(USUARIO) = UPPER(p_usuario) AND ACTIVO = 'S';
+--       RETURN l_hash = STANDARD_HASH(p_password || UPPER(p_usuario), 'SHA256');
+--   EXCEPTION WHEN NO_DATA_FOUND THEN RETURN FALSE;
+--   END;
+--
+-- Nada mas del paquete cambia.
+FUNCTION credenciales_validas(
+    p_usuario  IN VARCHAR2,
+    p_password IN VARCHAR2
+) RETURN BOOLEAN IS
+BEGIN
+    fijar_workspace;
+    RETURN APEX_UTIL.IS_LOGIN_PASSWORD_VALID(
+        p_username => UPPER(p_usuario),
+        p_password => p_password);
+END credenciales_validas;
+
+-- Si la cuenta esta bloqueada en el workspace (ACCOUNT_LOCKED = 'Y').
+--
+-- Hace falta porque IS_LOGIN_PASSWORD_VALID solo compara la contrasena: un
+-- usuario bloqueado desde la pantalla Usuarios (pagina 67, usuarios.sql) seguia
+-- entrando al sitio con su contrasena de siempre (08/10/2026).
+--
+-- Best-effort: si la vista no se puede leer, NO bloquea. Prefiero dejar entrar
+-- a alguien bloqueado antes que dejar a todos afuera por un privilegio.
+FUNCTION cuenta_bloqueada(p_usuario IN VARCHAR2) RETURN BOOLEAN IS
+    l_bloqueada VARCHAR2(10);
+BEGIN
+    fijar_workspace;
+    SELECT ACCOUNT_LOCKED INTO l_bloqueada
+      FROM APEX_WORKSPACE_APEX_USERS
+     WHERE UPPER(USER_NAME) = UPPER(p_usuario)
+       AND ROWNUM = 1;
+    RETURN l_bloqueada = 'Y';
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN FALSE;
+END cuenta_bloqueada;
+
+-- Nombre y correo del usuario del workspace, para poblar la pantalla de cuenta.
+-- Best-effort: si el usuario no esta en el workspace o falta el privilegio de
+-- lectura, devolvemos nulos y el front cae al usuario tipeado.
+PROCEDURE datos_usuario(
+    p_usuario IN  VARCHAR2,
+    p_nombre  OUT VARCHAR2,
+    p_email   OUT VARCHAR2
+) IS
+BEGIN
+    fijar_workspace;
+    SELECT TRIM(TRIM(FIRST_NAME) || ' ' || TRIM(LAST_NAME)), EMAIL
+      INTO p_nombre, p_email
+      FROM APEX_WORKSPACE_APEX_USERS
+     WHERE UPPER(USER_NAME) = UPPER(p_usuario)
+       AND ROWNUM = 1;
+EXCEPTION
+    WHEN OTHERS THEN
+        p_nombre := NULL;
+        p_email  := NULL;
+END datos_usuario;
+
+------------------------------------------------------------------------------
+-- API publica
+------------------------------------------------------------------------------
+
+PROCEDURE login(p_usuario IN VARCHAR2, p_password IN VARCHAR2) IS
+    l_ok     BOOLEAN;
+    l_token  VARCHAR2(128);
+    l_exp    TIMESTAMP;
+    l_nombre VARCHAR2(512);
+    l_email  VARCHAR2(255);
+BEGIN
+    IF p_usuario IS NULL OR p_password IS NULL THEN
+        abrir_json;
+        APEX_JSON.OPEN_OBJECT;
+        APEX_JSON.WRITE('success', FALSE);
+        APEX_JSON.WRITE('message', 'Usuario y contrasena son obligatorios');
+        APEX_JSON.CLOSE_OBJECT;
+        RETURN;
+    END IF;
+
+    -- Una sola vez: cada llamada a IS_LOGIN_PASSWORD_VALID puede contar como un
+    -- intento en el workspace.
+    l_ok := credenciales_validas(p_usuario, p_password);
+
+    -- La contrasena primero: a quien no la sabe no se le dice si la cuenta
+    -- esta bloqueada.
+    IF l_ok AND cuenta_bloqueada(p_usuario) THEN
+        p_error(403, 'Forbidden',
+                'Tu usuario esta bloqueado. Pedile a quien administra los usuarios que lo active.');
+    ELSIF l_ok THEN
+        l_token := generar_token;
+        l_exp   := SYSTIMESTAMP + NUMTODSINTERVAL(c_horas_token * 60 * 60, 'SECOND');
+
+        -- Un solo token activo por usuario: desactiva los anteriores.
+        UPDATE FACILITADORES_TOKENS SET ACTIVO = 'N'
+         WHERE USUARIO = UPPER(p_usuario) AND ACTIVO = 'S';
+
+        INSERT INTO FACILITADORES_TOKENS (TOKEN, USUARIO, FECHA_CREACION, FECHA_EXPIRACION, ACTIVO)
+        VALUES (l_token, UPPER(p_usuario), SYSTIMESTAMP, l_exp, 'S');
+        COMMIT;
+
+        datos_usuario(p_usuario, l_nombre, l_email);
+
+        abrir_json;
+        APEX_JSON.OPEN_OBJECT;
+        APEX_JSON.WRITE('success', TRUE);
+        APEX_JSON.WRITE('message', 'Autenticacion exitosa');
+        APEX_JSON.OPEN_OBJECT('data');
+        APEX_JSON.WRITE('token',   l_token);
+        APEX_JSON.WRITE('usuario', UPPER(p_usuario));
+        APEX_JSON.WRITE('nombre',  l_nombre);
+        APEX_JSON.WRITE('email',   l_email);
+        APEX_JSON.WRITE('expira',  TO_CHAR(l_exp, 'YYYY-MM-DD"T"HH24:MI:SS'));
+        APEX_JSON.CLOSE_OBJECT;
+        APEX_JSON.CLOSE_OBJECT;
+    ELSE
+        -- 401 real. El front igual detecta el fallo por success:false.
+        p_error(401, 'Unauthorized', 'Usuario o contrasena incorrectos');
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+END login;
+
+PROCEDURE logout(p_token IN VARCHAR2) IS
+    l_filas NUMBER;
+BEGIN
+    UPDATE FACILITADORES_TOKENS SET ACTIVO = 'N'
+     WHERE TOKEN = UPPER(p_token) AND ACTIVO = 'S';
+    l_filas := SQL%ROWCOUNT;
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', l_filas > 0);
+    APEX_JSON.WRITE('message',
+        CASE WHEN l_filas > 0 THEN 'Sesion cerrada'
+             ELSE 'Token no encontrado o ya inactivo' END);
+    APEX_JSON.CLOSE_OBJECT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+END logout;
+
+PROCEDURE perfil(p_token IN VARCHAR2) IS
+    l_usuario VARCHAR2(255);
+    l_nombre  VARCHAR2(512);
+    l_email   VARCHAR2(255);
+    l_exp     TIMESTAMP;
+BEGIN
+    l_usuario := validar_token(p_token);
+    IF l_usuario IS NULL THEN
+        p_error(401, 'Unauthorized', 'Token invalido o expirado');
+        RETURN;
+    END IF;
+
+    SELECT FECHA_EXPIRACION INTO l_exp
+      FROM FACILITADORES_TOKENS WHERE TOKEN = UPPER(p_token);
+
+    datos_usuario(l_usuario, l_nombre, l_email);
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.OPEN_OBJECT('data');
+    APEX_JSON.WRITE('usuario', l_usuario);
+    APEX_JSON.WRITE('nombre',  l_nombre);
+    APEX_JSON.WRITE('email',   l_email);
+    APEX_JSON.WRITE('expira',  TO_CHAR(l_exp, 'YYYY-MM-DD"T"HH24:MI:SS'));
+    APEX_JSON.CLOSE_OBJECT;
+    APEX_JSON.CLOSE_OBJECT;
+EXCEPTION
+    WHEN OTHERS THEN
+        p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+END perfil;
+
+FUNCTION validar_token(p_token IN VARCHAR2) RETURN VARCHAR2 IS
+    l_usuario VARCHAR2(255);
+BEGIN
+    SELECT USUARIO INTO l_usuario
+      FROM FACILITADORES_TOKENS
+     WHERE TOKEN = UPPER(p_token)
+       AND ACTIVO = 'S'
+       AND FECHA_EXPIRACION > SYSTIMESTAMP;
+    fijar_identificador(l_usuario);
+    RETURN l_usuario;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        fijar_identificador(NULL);
+        RETURN NULL;
+END validar_token;
+
+END PKG_AUTH_FACILITADORES;
+/
+
+-- Si el paquete quedo INVALID, esto lo dice en vez de fallar 20 minutos despues.
+DECLARE
+  l_errores NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO l_errores
+    FROM USER_ERRORS WHERE NAME = 'PKG_AUTH_FACILITADORES';
+  IF l_errores > 0 THEN
+    DBMS_OUTPUT.PUT_LINE('[ERROR] PKG_AUTH_FACILITADORES compilo con errores:');
+    FOR e IN (SELECT TYPE, LINE, TEXT FROM USER_ERRORS
+               WHERE NAME = 'PKG_AUTH_FACILITADORES' ORDER BY TYPE, SEQUENCE) LOOP
+      DBMS_OUTPUT.PUT_LINE('        ' || e.TYPE || ' L' || e.LINE || ': ' || e.TEXT);
+    END LOOP;
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[OK]   PKG_AUTH_FACILITADORES compilado.');
+  END IF;
+END;
+/
+
+--------------------------------------------------------------------------------
+-- 4. ENDPOINTS ORDS
+--------------------------------------------------------------------------------
+-- Estructura PLANA: la logica va directo en el p_source del handler.
+-- Nunca el patron anidado de "un GET que se redefine a si mismo" (da HTTP 500).
+--
+--   POST   /facilitadores/auth/login    { usuario, password }  -> { success, data:{token,...} }
+--   POST   /facilitadores/auth/logout   Authorization: Bearer  -> desactiva el token
+--   GET    /facilitadores/auth/me       Authorization: Bearer  -> datos de sesion / 401
+--   OPTIONS de los tres         -> preflight CORS del navegador
+
+-- 4.1 REST-enable del esquema.
+-- Solo si no estaba habilitado: re-habilitarlo con otro patron cambiaria la URL
+-- de TODO lo que ya este publicado en este esquema.
+DECLARE
+  l_ya NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO l_ya FROM USER_ORDS_SCHEMAS;
+  IF l_ya = 0 THEN
+    ORDS.ENABLE_SCHEMA(
+        p_enabled             => TRUE,
+        p_schema              => USER,
+        p_url_mapping_type    => 'BASE_PATH',
+        p_url_mapping_pattern => 'fundcarac',
+        p_auto_rest_auth      => FALSE);
+    COMMIT;
+    DBMS_OUTPUT.PUT_LINE('[OK]   Esquema ' || USER || ' habilitado en ORDS como /fundcarac/');
+  ELSE
+    FOR s IN (SELECT PARSING_SCHEMA, PATTERN FROM USER_ORDS_SCHEMAS) LOOP
+      DBMS_OUTPUT.PUT_LINE('[SKIP] Esquema ' || s.PARSING_SCHEMA ||
+                           ' ya estaba en ORDS como /' || s.PATTERN || '/');
+    END LOOP;
+  END IF;
+END;
+/
+
+-- 4.2 Modulo. SOLO SI NO EXISTE.
+--
+-- ORDS.DEFINE_MODULE sobre un modulo que ya existe lo BORRA con todos sus
+-- templates y lo vuelve a crear vacio. Los endpoints de negocio de Facilitadores
+-- (horarios, marcaciones, materiales...) van a vivir en este mismo modulo pero
+-- los publican OTROS scripts: re-correr este archivo sin el chequeo se los
+-- llevaria puestos a todos, sin ningun error a la vista.
+DECLARE
+  l_ya NUMBER;
+BEGIN
+  SELECT COUNT(*) INTO l_ya FROM USER_ORDS_MODULES WHERE NAME = 'facilitadores';
+  IF l_ya = 0 THEN
+    ORDS.DEFINE_MODULE(
+        p_module_name    => 'facilitadores',
+        p_base_path      => '/facilitadores/',
+        p_items_per_page => 0,
+        p_status         => 'PUBLISHED');
+    COMMIT;
+    DBMS_OUTPUT.PUT_LINE('[OK]   Modulo ORDS facilitadores definido.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[SKIP] Modulo ORDS facilitadores ya existia: no se redefine (borraria');
+    DBMS_OUTPUT.PUT_LINE('       los endpoints que publican los otros scripts).');
+  END IF;
+END;
+/
+
+-- 4.3 Handlers.
+BEGIN
+  -- Borrado previo: DEFINE_HANDLER falla si el handler ya existe.
+  BEGIN ORDS.DELETE_HANDLER('facilitadores', 'auth/login',  'POST');    EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('facilitadores', 'auth/login',  'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('facilitadores', 'auth/logout', 'POST');    EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('facilitadores', 'auth/logout', 'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('facilitadores', 'auth/me',     'GET');     EXCEPTION WHEN OTHERS THEN NULL; END;
+  BEGIN ORDS.DELETE_HANDLER('facilitadores', 'auth/me',     'OPTIONS'); EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ----------------------------------------------------------------------------
+  -- /auth/login  (publico)
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'facilitadores',
+        p_pattern     => 'auth/login',
+        p_priority    => 0,
+        p_etag_type   => 'NONE');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  -- :usuario y :password los auto-bindea ORDS desde el JSON PLANO del body.
+  -- OJO: el paquete ya emite MIME_HEADER/HTTP_HEADER_CLOSE — no emitirlos aca.
+  -- Headers duplicados = respuesta corrupta.
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'facilitadores',
+      p_pattern     => 'auth/login',
+      p_method      => 'POST',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+BEGIN
+    PKG_AUTH_FACILITADORES.LOGIN(
+        p_usuario  => :usuario,
+        p_password => :password);
+END;
+~');
+
+  ----------------------------------------------------------------------------
+  -- /auth/logout  (token en el header Authorization)
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'facilitadores',
+        p_pattern     => 'auth/logout',
+        p_priority    => 0,
+        p_etag_type   => 'NONE');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'facilitadores',
+      p_pattern     => 'auth/logout',
+      p_method      => 'POST',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token VARCHAR2(256);
+    l_pos   PLS_INTEGER;
+BEGIN
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN
+            l_token := TRIM(SUBSTR(l_token, l_pos + 7));
+        END IF;
+    END IF;
+    PKG_AUTH_FACILITADORES.LOGOUT(p_token => l_token);
+END;
+~');
+
+  -- OBLIGATORIO: sin esto :authorization llega NULL y todo responde
+  -- "Token invalido o expirado" aunque el login haya dado un token bueno.
+  -- Va por CADA handler, no por template.
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'facilitadores',
+      p_pattern            => 'auth/logout',
+      p_method             => 'POST',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  ----------------------------------------------------------------------------
+  -- /auth/me  (protegido) — el front lo llama al arrancar para saber si la
+  -- sesion guardada sigue viva. Es el patron a copiar para todo endpoint
+  -- de negocio que se agregue despues.
+  ----------------------------------------------------------------------------
+  BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'facilitadores',
+        p_pattern     => 'auth/me',
+        p_priority    => 0,
+        p_etag_type   => 'NONE');
+  EXCEPTION WHEN OTHERS THEN NULL; END;
+
+  ORDS.DEFINE_HANDLER(
+      p_module_name => 'facilitadores',
+      p_pattern     => 'auth/me',
+      p_method      => 'GET',
+      p_source_type => 'plsql/block',
+      p_source      => q'~
+DECLARE
+    l_token VARCHAR2(256);
+    l_pos   PLS_INTEGER;
+BEGIN
+    l_token := :authorization;
+    IF l_token IS NOT NULL THEN
+        l_pos := INSTR(UPPER(l_token), 'BEARER ');
+        IF l_pos > 0 THEN
+            l_token := TRIM(SUBSTR(l_token, l_pos + 7));
+        END IF;
+    END IF;
+    PKG_AUTH_FACILITADORES.PERFIL(p_token => l_token);
+END;
+~');
+
+  ORDS.DEFINE_PARAMETER(
+      p_module_name        => 'facilitadores',
+      p_pattern            => 'auth/me',
+      p_method             => 'GET',
+      p_name               => 'Authorization',
+      p_bind_variable_name => 'authorization',
+      p_source_type        => 'HEADER',
+      p_param_type         => 'STRING',
+      p_access_method      => 'IN');
+
+  COMMIT;
+  DBMS_OUTPUT.PUT_LINE('[OK]   Handlers auth/login, auth/logout y auth/me publicados.');
+END;
+/
+
+-- 4.4 Preflight CORS (OPTIONS), en bloque aparte y a prueba de fallos.
+--
+-- El preflight lo dispara un navegador pegandole DIRECTO a ORDS con el header
+-- Authorization o un JSON, y eso es lo que hacen la PWA y `npm run dev` en web.
+-- Sin el preflight el navegador corta con "blocked by CORS policy" antes de
+-- llegar al handler.
+--
+-- Va en bloque aparte porque algunas versiones de ORDS solo aceptan
+-- GET/POST/PUT/DELETE en p_method y rechazan OPTIONS. Si eso pasa preferimos un
+-- [WARN] a tumbar el script entero.
+DECLARE
+  PROCEDURE preflight(p_pattern IN VARCHAR2) IS
+  BEGIN
+    ORDS.DEFINE_HANDLER(
+        p_module_name => 'facilitadores',
+        p_pattern     => p_pattern,
+        p_method      => 'OPTIONS',
+        p_source_type => 'plsql/block',
+        p_source      => q'~
+BEGIN
+    OWA_UTIL.MIME_HEADER('text/plain', FALSE);
+    HTP.P('Access-Control-Allow-Origin: *');
+    HTP.P('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    HTP.P('Access-Control-Allow-Headers: Authorization, Content-Type');
+    HTP.P('Access-Control-Max-Age: 86400');
+    OWA_UTIL.HTTP_HEADER_CLOSE;
+END;
+~');
+  END preflight;
+BEGIN
+  preflight('auth/login');
+  preflight('auth/logout');
+  preflight('auth/me');
+  COMMIT;
+  DBMS_OUTPUT.PUT_LINE('[OK]   Preflight OPTIONS publicado para los 3 endpoints.');
+EXCEPTION
+  WHEN OTHERS THEN
+    ROLLBACK;
+    DBMS_OUTPUT.PUT_LINE('[WARN] Esta version de ORDS no acepta handlers OPTIONS: ' || SQLERRM);
+    DBMS_OUTPUT.PUT_LINE('       REVISAR: la PWA y npm run dev en web le pegan directo a ORDS.');
+    DBMS_OUTPUT.PUT_LINE('       Si el login falla por CORS en el navegador, el problema esta aca.');
+END;
+/
+
+--------------------------------------------------------------------------------
+-- 5. VERIFICACION
+--------------------------------------------------------------------------------
+
+DECLARE
+  l_pattern   VARCHAR2(255);
+  l_sgid      NUMBER;
+  l_handlers  NUMBER;
+  l_base      VARCHAR2(500);
+BEGIN
+  DBMS_OUTPUT.PUT_LINE(RPAD('-', 78, '-'));
+
+  -- Base path real del esquema en ORDS.
+  BEGIN
+    SELECT PATTERN INTO l_pattern FROM USER_ORDS_SCHEMAS WHERE ROWNUM = 1;
+  EXCEPTION WHEN OTHERS THEN l_pattern := '???';
+  END;
+  l_base := 'https://oracleapex.com/ords/' || l_pattern || '/facilitadores/';
+
+  -- El workspace configurado en el paquete tiene que existir.
+  BEGIN
+    l_sgid := APEX_UTIL.FIND_SECURITY_GROUP_ID(p_workspace => 'FUNDCARAC');
+    IF l_sgid IS NULL THEN
+      DBMS_OUTPUT.PUT_LINE('[ERROR] El workspace FUNDCARAC no existe o no es visible.');
+      DBMS_OUTPUT.PUT_LINE('        Corrige c_workspace en PKG_AUTH_FACILITADORES y recompila.');
+      DBMS_OUTPUT.PUT_LINE('        Workspaces visibles: SELECT WORKSPACE_NAME FROM APEX_WORKSPACES;');
+    ELSE
+      DBMS_OUTPUT.PUT_LINE('[OK]   Workspace FUNDCARAC encontrado (security_group_id ' || l_sgid || ').');
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    DBMS_OUTPUT.PUT_LINE('[WARN] No se pudo validar el workspace: ' || SQLERRM);
+  END;
+
+  SELECT COUNT(*) INTO l_handlers
+    FROM USER_ORDS_HANDLERS h
+    JOIN USER_ORDS_TEMPLATES t ON t.ID = h.TEMPLATE_ID
+    JOIN USER_ORDS_MODULES   m ON m.ID = t.MODULE_ID
+   WHERE m.NAME = 'facilitadores';
+  -- 3 = login/logout/me. 6 = ademas el preflight OPTIONS de cada uno.
+  DBMS_OUTPUT.PUT_LINE('[INFO] Handlers publicados en el modulo facilitadores: ' || l_handlers ||
+                       ' (3 sin preflight, 6 con preflight OPTIONS).');
+  IF l_handlers < 3 THEN
+    DBMS_OUTPUT.PUT_LINE('[ERROR] Faltan handlers. Revisa los mensajes de la seccion 4.');
+  END IF;
+
+  DBMS_OUTPUT.PUT_LINE(RPAD('-', 78, '-'));
+  DBMS_OUTPUT.PUT_LINE('URL BASE PARA EL FRONTEND:');
+  DBMS_OUTPUT.PUT_LINE('  ' || l_base);
+  DBMS_OUTPUT.PUT_LINE('');
+  DBMS_OUTPUT.PUT_LINE('Ponela en:');
+  DBMS_OUTPUT.PUT_LINE('  .env  ->  EXPO_PUBLIC_API_URL   (APK, PWA y npm run dev)');
+  DBMS_OUTPUT.PUT_LINE('');
+  DBMS_OUTPUT.PUT_LINE('Probar sin front:');
+  DBMS_OUTPUT.PUT_LINE('  curl -X POST "' || l_base || 'auth/login" \');
+  DBMS_OUTPUT.PUT_LINE('    -H "Content-Type: application/json" \');
+  DBMS_OUTPUT.PUT_LINE('    -d ''{"usuario":"TU_USUARIO","password":"TU_CLAVE"}''');
+  DBMS_OUTPUT.PUT_LINE(RPAD('-', 78, '-'));
+END;
+/

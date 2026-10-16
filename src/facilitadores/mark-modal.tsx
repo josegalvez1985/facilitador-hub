@@ -13,7 +13,7 @@ export function MarkModal() {
   return (
     <Modal visible={app.markOpen} onClose={close} title={app.marked ? '¡Entrada registrada!' : 'Registrar entrada'} label="Registrar marcación">
       <View style={{ marginVertical: 14 }}>
-        <StatIcon icon={app.marked ? CheckCheck : Navigation} tone="teal" />
+        <StatIcon icon={app.marked ? CheckCheck : Navigation} tone="success" />
       </View>
       <ModalText strong>{lesson.title.replace(/ · .*/, '')} · {lesson.grade}</ModalText>
       <ModalText>

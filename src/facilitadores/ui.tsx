@@ -15,14 +15,16 @@ import {
 import { Image } from 'expo-image';
 import { X, type LucideIcon } from 'lucide-react-native';
 
-import { colors, fonts, radius, shadow, tones, type FontWeight, type Tone } from './theme';
+import { fonts, radius, toneColors, type FontWeight, type Palette, type Tone } from './theme';
+import { makeStyles, useTheme } from './theme-provider';
 
 const logo = require('../../assets/images/logo.png');
 
 type TextProps = RNTextProps & { weight?: FontWeight; size?: number; color?: string };
 
-export function Text({ weight = 'regular', size = 14, color = colors.foreground, style, ...props }: TextProps) {
-  return <RNText {...props} style={[{ fontFamily: fonts[weight], fontSize: size, color }, style]} />;
+export function Text({ weight = 'regular', size = 14, color, style, ...props }: TextProps) {
+  const { colors } = useTheme();
+  return <RNText {...props} style={[{ fontFamily: fonts[weight], fontSize: size, color: color ?? colors.foreground }, style]} />;
 }
 
 type ButtonVariant = 'default' | 'outline' | 'secondary' | 'ghost' | 'link';
@@ -42,13 +44,20 @@ type ButtonProps = {
   disabled?: boolean;
 };
 
-const variantStyles: Record<ButtonVariant, { box: ViewStyle; text: string }> = {
-  default: { box: { backgroundColor: colors.primary }, text: colors.primaryForeground },
-  outline: { box: { backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border }, text: colors.foreground },
-  secondary: { box: { backgroundColor: colors.secondary }, text: colors.primary },
-  ghost: { box: { backgroundColor: 'transparent' }, text: colors.foreground },
-  link: { box: { backgroundColor: 'transparent', paddingHorizontal: 0 }, text: colors.primary },
-};
+function variantStyles(c: Palette, variant: ButtonVariant): { box: ViewStyle; text: string } {
+  switch (variant) {
+    case 'outline':
+      return { box: { backgroundColor: c.background, borderWidth: 1, borderColor: c.border }, text: c.foreground };
+    case 'secondary':
+      return { box: { backgroundColor: c.secondary }, text: c.primaryText };
+    case 'ghost':
+      return { box: { backgroundColor: 'transparent' }, text: c.foreground };
+    case 'link':
+      return { box: { backgroundColor: 'transparent', paddingHorizontal: 0 }, text: c.primaryText };
+    default:
+      return { box: { backgroundColor: c.primary }, text: c.primaryForeground };
+  }
+}
 
 const sizeStyles: Record<ButtonSize, ViewStyle> = {
   default: { height: 38, paddingHorizontal: 16 },
@@ -58,14 +67,15 @@ const sizeStyles: Record<ButtonSize, ViewStyle> = {
 };
 
 export function Button({ label, onPress, variant = 'default', size = 'default', icon: Icon, iconRight: IconRight, accessibilityLabel, style, textStyle, children, disabled }: ButtonProps) {
-  const v = variantStyles[variant];
+  const { colors } = useTheme();
+  const v = variantStyles(colors, variant);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed }) => [styles.button, sizeStyles[size], v.box, pressed && { opacity: 0.75 }, disabled && { opacity: 0.5 }, style]}
+      style={({ pressed }) => [base.button, sizeStyles[size], v.box, pressed && { opacity: 0.75 }, disabled && { opacity: 0.5 }, style]}
     >
       {Icon && <Icon size={16} color={v.text} />}
       {label && (
@@ -80,9 +90,10 @@ export function Button({ label, onPress, variant = 'default', size = 'default', 
 }
 
 export function Badge({ label, tone = 'primary', icon: Icon, style }: { label: string; tone?: Tone; icon?: LucideIcon; style?: StyleProp<ViewStyle> }) {
-  const t = tones[tone];
+  const { colors } = useTheme();
+  const t = toneColors(colors, tone);
   return (
-    <View style={[styles.badge, { backgroundColor: t.background }, style]}>
+    <View style={[base.badge, { backgroundColor: t.background }, style]}>
       {Icon && <Icon size={11} color={t.color} />}
       <Text weight="semibold" size={10} color={t.color}>
         {label}
@@ -92,22 +103,25 @@ export function Badge({ label, tone = 'primary', icon: Icon, style }: { label: s
 }
 
 export function StatIcon({ icon: Icon, tone = 'primary', size = 32 }: { icon: LucideIcon; tone?: Tone; size?: number }) {
-  const t = tones[tone];
+  const { colors } = useTheme();
+  const t = toneColors(colors, tone);
   return (
-    <View style={[styles.statIcon, { width: size, height: size, backgroundColor: t.background }]}>
+    <View style={[base.statIcon, { width: size, height: size, backgroundColor: t.background }]}>
       <Icon size={Math.round(size * 0.53)} color={t.color} />
     </View>
   );
 }
 
 export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
-  return <View style={[styles.card, style]}>{children}</View>;
+  const s = useStyles();
+  return <View style={[s.card, style]}>{children}</View>;
 }
 
 export function Notice({ children }: { children: ReactNode }) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.notice}>
-      <Text size={12} color={colors.teal} style={{ lineHeight: 19 }}>
+    <View style={[base.notice, { backgroundColor: colors.successSoft }]}>
+      <Text size={12} color={colors.success} style={{ lineHeight: 19 }}>
         {children}
       </Text>
     </View>
@@ -115,25 +129,27 @@ export function Notice({ children }: { children: ReactNode }) {
 }
 
 export function Avatar({ initials, size = 38 }: { initials: string; size?: number }) {
+  const { colors } = useTheme();
   return (
-    <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}>
-      <Text weight="bold" size={Math.round(size * 0.34)} color={colors.primary}>
+    <View style={[base.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: colors.secondary }]}>
+      <Text weight="bold" size={Math.round(size * 0.34)} color={colors.primaryText}>
         {initials}
       </Text>
     </View>
   );
 }
 
-export function Dot({ color = colors.primary }: { color?: string }) {
-  return <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: color }} />;
+export function Dot({ color }: { color?: string }) {
+  const { colors } = useTheme();
+  return <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: color ?? colors.primaryText }} />;
 }
 
 export function Brand({ size = 22 }: { size?: number }) {
   return (
-    <View style={styles.brand}>
-      <Image source={logo} style={styles.brandMark} accessibilityLabel="Logo de Facilitadores" />
+    <View style={base.brand}>
+      <Image source={logo} style={base.brandMark} accessibilityLabel="Logo de Facilitadores" />
       <Text weight="extrabold" size={size}>
-        facilitadores<Text weight="extrabold" size={size} color={colors.primary}>.</Text>
+        facilitadores
       </Text>
     </View>
   );
@@ -142,17 +158,19 @@ export function Brand({ size = 22 }: { size?: number }) {
 type FieldProps = TextInputProps & { label: string; icon?: LucideIcon; right?: ReactNode };
 
 export function Field({ label, icon: Icon, right, style, ...props }: FieldProps) {
+  const { colors } = useTheme();
+  const s = useStyles();
   return (
-    <View style={styles.field}>
-      <View style={styles.fieldLabel}>
+    <View style={base.field}>
+      <View style={base.fieldLabel}>
         {Icon && <Icon size={14} color={colors.foreground} />}
         <Text weight="semibold" size={12}>
           {label}
         </Text>
       </View>
       <View>
-        <TextInput placeholderTextColor={colors.mutedForeground} {...props} style={[styles.input, right ? { paddingRight: 48 } : null, style]} />
-        {right && <View style={styles.fieldRight}>{right}</View>}
+        <TextInput placeholderTextColor={colors.mutedForeground} keyboardAppearance={colors.scheme} {...props} style={[s.input, right ? { paddingRight: 48 } : null, style]} />
+        {right && <View style={base.fieldRight}>{right}</View>}
       </View>
     </View>
   );
@@ -161,12 +179,13 @@ export function Field({ label, icon: Icon, right, style, ...props }: FieldProps)
 type ModalProps = { visible: boolean; onClose: () => void; title: string; label?: string; children: ReactNode; closeLabel?: string };
 
 export function Modal({ visible, onClose, title, label, children, closeLabel = 'Cerrar' }: ModalProps) {
+  const s = useStyles();
   return (
     <RNModal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <View style={s.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel={closeLabel} />
-        <View style={styles.modal} accessibilityViewIsModal accessibilityLabel={label ?? title}>
-          <View style={styles.modalHead}>
+        <View style={s.modal} accessibilityViewIsModal accessibilityLabel={label ?? title}>
+          <View style={base.modalHead}>
             <Text weight="bold" size={20} style={{ flex: 1 }}>
               {title}
             </Text>
@@ -180,6 +199,7 @@ export function Modal({ visible, onClose, title, label, children, closeLabel = '
 }
 
 export function ModalText({ children, strong }: { children: ReactNode; strong?: boolean }) {
+  const { colors } = useTheme();
   return (
     <Text size={12} weight={strong ? 'semibold' : 'regular'} color={strong ? colors.foreground : colors.mutedForeground} style={{ lineHeight: 22 }}>
       {children}
@@ -188,12 +208,12 @@ export function ModalText({ children, strong }: { children: ReactNode; strong?: 
 }
 
 export function ModalActions({ children }: { children: ReactNode }) {
-  return <View style={styles.modalActions}>{children}</View>;
+  return <View style={base.modalActions}>{children}</View>;
 }
 
 export function SectionHeading({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
-    <View style={styles.sectionHeading}>
+    <View style={base.sectionHeading}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>{typeof title === 'string' ? <Text weight="bold" size={16}>{title}</Text> : title}</View>
       {children}
     </View>
@@ -201,8 +221,9 @@ export function SectionHeading({ title, children }: { title: ReactNode; children
 }
 
 export function PageTitle({ title, subtitle, children }: { title: ReactNode; subtitle: string; children?: ReactNode }) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.welcomeRow}>
+    <View style={base.welcomeRow}>
       <View style={{ flexShrink: 1 }}>
         <Text weight="bold" size={27} style={{ lineHeight: 36 }}>
           {title}
@@ -216,23 +237,29 @@ export function PageTitle({ title, subtitle, children }: { title: ReactNode; sub
   );
 }
 
-export const styles = StyleSheet.create({
+// Estilos que no dependen del tema.
+const base = StyleSheet.create({
   button: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: radius.md },
   badge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5, borderRadius: radius.sm, paddingHorizontal: 7, paddingVertical: 4 },
   statIcon: { alignItems: 'center', justifyContent: 'center', borderRadius: radius.lg },
-  card: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, padding: 18, ...shadow },
-  notice: { backgroundColor: colors.tealSoft, paddingVertical: 12, paddingHorizontal: 16, borderRadius: radius.md, marginVertical: 15 },
-  avatar: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.secondary },
+  notice: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: radius.md, marginVertical: 15 },
+  avatar: { alignItems: 'center', justifyContent: 'center' },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   brandMark: { width: 40, height: 40, borderRadius: 10 },
   field: { gap: 8, marginBottom: 18 },
   fieldLabel: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  input: { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, minHeight: 43, paddingHorizontal: 12, paddingVertical: 10, color: colors.foreground, fontFamily: fonts.regular, fontSize: 14 },
   fieldRight: { position: 'absolute', right: 3, top: 3 },
-  overlay: { flex: 1, backgroundColor: colors.overlay, alignItems: 'center', justifyContent: 'center', padding: 20 },
-  modal: { width: '100%', maxWidth: 440, backgroundColor: colors.card, borderRadius: radius.lg, padding: 24, ...shadow },
   modalHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8, gap: 8 },
   modalActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-end', marginTop: 22 },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12 },
   welcomeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 16 },
 });
+
+const useStyles = makeStyles((c) =>
+  StyleSheet.create({
+    card: { backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: radius.lg, padding: 18, ...c.shadow },
+    input: { backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: radius.md, minHeight: 43, paddingHorizontal: 12, paddingVertical: 10, color: c.foreground, fontFamily: fonts.regular, fontSize: 14 },
+    overlay: { flex: 1, backgroundColor: c.overlay, alignItems: 'center', justifyContent: 'center', padding: 20 },
+    modal: { width: '100%', maxWidth: 440, backgroundColor: c.card, borderRadius: radius.lg, padding: 24, borderWidth: c.scheme === 'dark' ? 1 : 0, borderColor: c.border, ...c.shadow },
+  }),
+);

@@ -39,19 +39,14 @@ export const materialIndex = [
 
 export const grades = ['4.º grado', '5.º grado', '6.º grado'];
 
-// Fecha fija de la demostración: jueves 15 de octubre de 2026.
-export const demoToday = { year: 2026, month: 9, day: 15, label: 'Jueves, 15 de octubre de 2026', short: '15 de octubre, 2026' };
 
 export const demoUser = { name: 'María González', initials: 'MG', role: 'Facilitadora', email: 'maria.gonzalez@ejemplo.com', city: 'Asunción' };
 
-export const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
-export const weekDays = [
-  { short: 'LUN', long: 'Lunes', date: 12 },
-  { short: 'MAR', long: 'Martes', date: 13 },
-  { short: 'MIÉ', long: 'Miércoles', date: 14 },
-  { short: 'JUE', long: 'Jueves', date: 15 },
-  { short: 'VIE', long: 'Viernes', date: 16 },
-  { short: 'SÁB', long: 'Sábado', date: 17 },
-  { short: 'DOM', long: 'Domingo', date: 18 },
-];
+
+/** "MARÍA GONZÁLEZ" → "MG"; "JPEREZ" → "JP". */
+export function iniciales(nombre: string) {
+  const partes = nombre.trim().split(/\s+/).filter(Boolean);
+  const letras = partes.length > 1 ? `${partes[0]?.[0] ?? ''}${partes[partes.length - 1]?.[0] ?? ''}` : (partes[0] ?? '').slice(0, 2);
+  return letras.toUpperCase() || demoUser.initials;
+}
