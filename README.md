@@ -153,10 +153,12 @@ Los tres formularios del sitio **editorial-ethos-app** (ver `GUIA_FORMULARIOS.md
 | **Form. 3** · Agenda semanal | Su semana de mañana y tarde en todas sus instituciones, con lo bloqueado (`FACILITADORES_DIAS_BLOQUEOS`) en rojo | Año lectivo |
 
 - Salen de **postulaciones** (no de pre-horarios), las activas (`NVL(ESTADO,'Activo') <> 'Inactivo'`). Sin Excel.
-- **Un dibujo, dos salidas**: cada formulario se dibuja una vez contra un "pintor" (`src/facilitadores/formularios/pintor.ts`). El PDF sale con jsPDF (oficio apaisado; el Form. 1 pagina, el 2 y el 3 van en una hoja) y la vista previa con react-native-svg. La imagen es esa misma vista: en el APK con `Svg.toDataURL`, en la web pasando el SVG por un `<canvas>`. El texto se mide con la Helvetica de jsPDF en las dos salidas, así cortan igual.
+- **Un dibujo, dos salidas**: cada formulario se dibuja una vez contra un "pintor" (`src/facilitadores/formularios/pintor.ts`). El PDF sale con jsPDF (oficio apaisado; el Form. 1 pagina, el 2 y el 3 van en una hoja) y la vista previa es el mismo dibujo en SVG. La imagen sale de ese SVG pasado por un `<canvas>`: en la web, en el navegador; en el APK, adentro de un **WebView** (`hoja-nativa.tsx`), que también muestra la vista previa (se amplía pellizcando). El texto se mide con la Helvetica de jsPDF en las dos salidas, así cortan igual.
+- **Por qué un WebView en el APK:** react-native-svg dibuja en el hilo principal de Android (la vista previa y `Svg.toDataURL`, que además comprime el PNG ahí). Con una hoja de ~700 elementos la app quedaba "no responde" al tocar PDF o Imagen. El WebView trabaja en su propio proceso.
+- **Logo:** `assets/images/logo-formularios.jpg` (200 px, copia de `public/logo.png` sobre blanco). jsPDF inserta un JPEG sin decodificarlo; con el PNG de 512 px el PDF del Form. 2 tardaba segundos en el APK y pesaba 1 MB.
 - **APK**: el archivo se guarda en la caché y se abre el menú de compartir (`expo-sharing`). **Web/PWA**: se abre en una pestaña nueva, o se descarga si el navegador la bloquea.
 - Los textos fijos (declaración, nota, contacto, misión, coordinación nacional) están en `form1.ts` y `form2.ts`, igual que en el sitio. Los colores de los manuales salen de `COLOR_MANUAL`.
-- `expo-sharing` es un módulo nativo: hace falta un **APK nuevo**.
+- `expo-sharing` y `react-native-webview` son módulos nativos: hace falta un **APK nuevo**.
 
 ### Historial de intervenciones (páginas 7 y 8)
 
@@ -285,7 +287,7 @@ Cómo se porta una página:
 | Intervenciones realizadas: "Falta publicar en el backend los endpoints de intervenciones-realizadas" | No se corrió `sql/intervenciones_realizadas_app_ethos.sql` | Correrlo en APEX |
 | Mis materiales: "Falta publicar en el backend el endpoint mis-materiales" | No se corrió `sql/materiales_app_ethos.sql` | Correrlo en APEX |
 | Formularios: "Falta publicar en el backend los endpoints de mis-formularios" | No se corrió `sql/formularios_app_ethos.sql` | Correrlo en APEX |
-| Formularios (APK): PDF o Imagen no abren nada | APK anterior a `expo-sharing` | Instalar un APK nuevo |
+| Formularios (APK): PDF o Imagen no abren nada, o la app "no responde" | APK anterior a `expo-sharing` / `react-native-webview` (la vista previa con react-native-svg bloqueaba el hilo principal) | Instalar un APK nuevo |
 | Inicio: un KPI dice "Falta publicar mis-intervenciones" | No se corrió (o no se volvió a correr) `sql/intervenciones_app_ethos.sql` | Correrlo en APEX |
 | Marcar: "Falta publicar en el backend los endpoints de mis-intervenciones" | No se corrió `sql/intervenciones_app_ethos.sql` | Correrlo en APEX |
 | Marcar: "Permití el acceso a la ubicación" | El navegador o el celular no dio permiso de ubicación | Habilitar la ubicación para la app y tocar **Reintentar** |

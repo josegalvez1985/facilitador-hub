@@ -132,7 +132,7 @@ Tus formularios 1, 2 y 3, listos para imprimir o mandar, en **PDF** o como **ima
 1. Abrí **Menú** y tocá **Formularios**.
 2. Elegí el formulario arriba: **Form. 1**, **Form. 2** o **Form. 3**.
 3. Elegí el **año lectivo** y, en los formularios 1 y 2, la **institución**. En el Form. 2 elegí también el **mes** o la **etapa**.
-4. Mirá la **vista previa**. Con **Ampliar** la ves más grande y la podés recorrer de costado.
+4. Mirá la **vista previa**. En el celular, pellizcala para ampliarla; en la computadora, tocá **Ampliar** y recorrela de costado.
 5. Tocá **PDF** o **Imagen**. En el celular se abre el menú para compartir: abrilo con un visor, guardalo o mandalo por WhatsApp. En la computadora se abre en una pestaña nueva.
 
 > Las recuperaciones y el título de las autoridades salen en blanco, para que los completes a mano. Si una clase tuvo más de 4 intervenciones en el período, salen las primeras 4 y la pantalla te avisa.

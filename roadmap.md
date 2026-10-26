@@ -29,7 +29,7 @@
 
 ## Pendiente
 - [ ] Correr en APEX `sql/formularios_app_ethos.sql` (publica `mis-formularios/*`, 4 de 4) y probar los tres formularios con un facilitador real; comparar con el sitio editorial-ethos-app.
-- [ ] Generar un APK nuevo para Formularios (`expo-sharing` es un módulo nativo) y probar PDF e Imagen en Android.
+- [ ] Generar un APK nuevo para Formularios (`expo-sharing` y `react-native-webview` son módulos nativos) y probar PDF e Imagen de los Form. 1, 2 y 3 en Android: antes la app quedaba "no responde".
 - [ ] Correr en APEX: `sql/historial_app_ethos.sql`, `sql/intervenciones_realizadas_app_ethos.sql`, `sql/agenda_app_ethos.sql`, `sql/materiales_app_ethos.sql` y de nuevo `sql/intervenciones_app_ethos.sql` (agrega el resumen ampliado y recientes); probar con TWALDE.
 - [ ] Marcar sin instituciones: causa encontrada. `V_INSTITUCIONES` compara el día con `TO_CHAR(..,'FMDAY')`, que en ORDS sale en inglés ("FRIDAY") y nunca coincide. Sin tocar APEX: volver a correr `sql/intervenciones_app_ethos.sql` (crea la copia `V_INSTITUCIONES_APP_ETHOS` y el paquete la usa) y probar con SALVADORAGB.
 - [ ] Reemplazar `sql/ords_modulo_ethos_export.sql` por la exportación completa.

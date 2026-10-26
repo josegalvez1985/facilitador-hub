@@ -5,19 +5,41 @@
 // principal, y con una hoja de ~2800 px la app quedaba "no responde". El WebView trabaja en su
 // propio proceso, y la imagen sale igual que en la web.
 
-import { useImperativeHandle, useMemo, useRef, type Ref } from 'react';
-import { WebView, type WebViewMessageEvent } from 'react-native-webview';
+import { useImperativeHandle, useMemo, useRef, type ComponentType, type Ref } from 'react';
+import type { StyleProp, ViewStyle } from 'react-native';
+import { WebView as WebViewRN, type WebViewMessageEvent } from 'react-native-webview';
 
 import type { Lamina } from './pintor';
 import { pixelesImagen } from './salida';
 import { svgMarkup, tamanoLamina } from './vista';
+
+/** Lo que se usa del WebView. */
+type Manija = { injectJavaScript(js: string): void };
+type PropsWeb = {
+  ref?: Ref<Manija>;
+  source: { html: string; baseUrl: string };
+  originWhitelist: string[];
+  onMessage: (e: WebViewMessageEvent) => void;
+  onRenderProcessGone?: () => void;
+  onContentProcessDidTerminate?: () => void;
+  style?: StyleProp<ViewStyle>;
+  scalesPageToFit?: boolean;
+  setBuiltInZoomControls?: boolean;
+  setDisplayZoomControls?: boolean;
+  nestedScrollEnabled?: boolean;
+  showsHorizontalScrollIndicator?: boolean;
+};
+// Los tipos de react-native-webview 14 (props de iOS, Android y Windows intersectadas) quedan en
+// `never` con TypeScript 6: se tipa con lo que se usa.
+const WebView = WebViewRN as unknown as ComponentType<PropsWeb>;
 
 /** Lo que la pantalla le pide a la hoja: la imagen PNG en base64. */
 export type HojaNativaRef = { rasterizar(): Promise<string> };
 
 type Pedido = { ok: (base64: string) => void; mal: (e: Error) => void };
 
-function html(lamina: Lamina) {
+/** El HTML del WebView: la hoja como SVG y la función que la pasa a PNG. */
+export function htmlHoja(lamina: Lamina) {
   const { ancho, alto } = pixelesImagen(lamina);
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=8, user-scalable=yes">
@@ -45,11 +67,11 @@ window.rasterizar = function (id) {
 }
 
 export function HojaNativa({ lamina, ancho, ref }: { lamina: Lamina; ancho: number; ref?: Ref<HojaNativaRef> }) {
-  const web = useRef<WebView>(null);
+  const web = useRef<Manija>(null);
   const pedidos = useRef(new Map<number, Pedido>());
   const siguiente = useRef(1);
   // Memo: si cambia el estado de la pantalla, el WebView no se vuelve a cargar.
-  const source = useMemo(() => ({ html: html(lamina), baseUrl: '' }), [lamina]);
+  const source = useMemo(() => ({ html: htmlHoja(lamina), baseUrl: '' }), [lamina]);
   const t = tamanoLamina(lamina);
 
   useImperativeHandle(ref, () => ({
