@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Modal as RNModal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePathname, useRouter, type Href } from 'expo-router';
-import { Bell, BookOpen, CalendarDays, ChevronRight, CircleHelp, ClipboardCheck, History, LayoutGrid, ListChecks, LogOut, MapPin, Menu, Plus, UserRound, X, type LucideIcon } from 'lucide-react-native';
+import { Bell, BookOpen, CalendarDays, ChevronRight, CircleHelp, ClipboardCheck, FileText, History, LayoutGrid, ListChecks, LogOut, MapPin, Menu, Plus, UserRound, X, type LucideIcon } from 'lucide-react-native';
 
 import { useSession } from './auth/session';
 import { demoUser, iniciales } from './data';
@@ -24,6 +24,7 @@ export const nav: NavItem[] = [
   { href: '/horarios', path: '/horarios', label: 'Mi agenda', short: 'Agenda', icon: CalendarDays, title: 'Mi agenda' },
   { href: '/materiales', path: '/materiales', label: 'Mis materiales', short: 'Materiales', icon: BookOpen, title: 'Mis materiales' },
   { href: '/evaluaciones', path: '/evaluaciones', label: 'Evaluaciones', short: 'Evaluaciones', icon: ClipboardCheck, title: 'Evaluaciones' },
+  { href: '/formularios', path: '/formularios', label: 'Formularios', short: 'Formularios', icon: FileText, title: 'Formularios' },
   { href: '/perfil', path: '/perfil', label: 'Mi perfil', short: 'Perfil', icon: UserRound, title: 'Mi perfil' },
 ];
 

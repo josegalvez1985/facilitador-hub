@@ -18,6 +18,7 @@ Esa es la URL de `EXPO_PUBLIC_API_URL` en `.env`.
 | [materiales_app_ethos.sql](materiales_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_MATERIALES_APP_ETHOS` (Mis materiales) y publica `GET mis-materiales`. No pisa rutas existentes. |
 | [agenda_app_ethos.sql](agenda_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_AGENDA_APP_ETHOS` (Mis horarios, página 3) y publica `GET mi-agenda`. No pisa rutas existentes. |
 | [intervenciones_app_ethos.sql](intervenciones_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_INTERVENCIONES_APP_ETHOS` (Marcar, página 2) y publica `mis-intervenciones/*`. No pisa rutas existentes: si alguna ya existe y no es de este paquete, se detiene sin tocar nada. |
+| [formularios_app_ethos.sql](formularios_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_FORMULARIOS_APP_ETHOS` (Form. 1, 2 y 3) y publica `mis-formularios/*`. Solo lectura. No pisa rutas existentes. |
 
 Nada de esto se ejecuta desde la app.
 
@@ -113,6 +114,19 @@ Validaciones del POST:
 - Al final, el script compara cuántas clases de hoy trae cada vista. Tienen que ser iguales.
 - Si alguna vez cambia `V_INSTITUCIONES`, hay que repetir el cambio en la copia.
 - [diagnostico_marcar.sql](diagnostico_marcar.sql): de solo lectura, explica por qué una institución no aparece en Marcar para un usuario. Usa `V_INSTITUCIONES`, o sea, lo que ve APEX.
+
+## Formularios 1, 2 y 3 (`PKG_FORMULARIOS_APP_ETHOS`)
+
+Los formularios del sitio editorial-ethos-app (`postulaciones/formulario`, `postulaciones/todas`, `intervenciones-crud`, `facilitadores-bloqueos`, `etapas`), con las mismas consultas pero con el `ID_FACILITADOR` sacado **del token**. Esos endpoints del sitio devuelven datos de todos los facilitadores, así que la app no los usa. Script: [formularios_app_ethos.sql](formularios_app_ethos.sql), **para correr una vez en APEX**. Solo lectura; no toca objetos de APEX.
+
+| Método | Ruta | Para | Responde |
+|---|---|---|---|
+| GET | `mis-formularios/postulaciones?anio=` | Form. 1, 2 y 3 | `{ success, es_facilitador, anio, anio_actual, anios[], facilitador: { nombre, telefono }, etapas: [ { fecha_inicio, fecha_fin } ], data: [ { id, id_institucion, institucion, turno, seccion, g2 … g3m, ser … liderazgo, lunes_desde … viernes_hasta, enfasis, estado } ] }`. Solo sus postulaciones activas del año (vacío = `FN_ANIO_LECTIVO_ACTUAL()`). |
+| GET | `mis-formularios/institucion?id_institucion=&anio=` | Form. 1 y 2 | Lo de `postulaciones/formulario`: `nombre`, `direccion`, `departamento`, `ciudad`, `barrio`, `autoridades[]`, `horarios[]` y `detalle[]` con **solo sus** postulaciones activas, numeradas por turno. 404 si no tiene postulaciones en esa institución ese año. |
+| GET | `mis-formularios/intervenciones?id_institucion=&desde=&hasta=` | Form. 2 | `{ success, data: [ { id_intervencion, id_postulacion, fecha (DD/MM/YYYY), nro_indice, si_no, motivo_desarrollo } ] }`. Fechas `YYYY-MM-DD`, inclusive, hasta 400 días. |
+| GET | `mis-formularios/bloqueos?anio=` | Form. 3 | `{ success, data: { lunes … viernes } \| null }`: sus franjas bloqueadas (`"07:00 - 11:40, 13:00 - 17:05"`). `FACILITADORES_DIAS_BLOQUEOS` se lee con SQL dinámico: si la tabla no existe, el paquete compila igual y devuelve `null`. |
+
+Cómo instalarlo: SQL Workshop → SQL Scripts → Upload `formularios_app_ethos.sql` → Run. La salida debe decir `[OK] PKG_FORMULARIOS_APP_ETHOS compilado` y `Handlers de mis-formularios publicados: 4 de 4`.
 
 ## Autenticación (`PKG_AUTH_ETHOS`)
 

@@ -59,7 +59,9 @@
         {
           "locationWhenInUsePermission": "Facilitadores usa tu ubicación para registrar dónde marcás cada intervención."
         }
-      ]
+      ],
+      "expo-sharing",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

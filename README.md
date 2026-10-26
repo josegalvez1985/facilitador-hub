@@ -16,6 +16,7 @@ Está hecha con **React Native + Expo**. Una sola base de código funciona en **
 | Intervenciones realizadas (páginas 4, 5 y 6 de APEX) | Conectada: instituciones, clases con sus días e historial, con contadores: requiere publicar [sql/intervenciones_realizadas_app_ethos.sql](sql/intervenciones_realizadas_app_ethos.sql) |
 | Historial de intervenciones (páginas 7 y 8 de APEX) | Conectado: búsqueda, filtros por mes y fecha, y edición: requiere publicar [sql/historial_app_ethos.sql](sql/historial_app_ethos.sql) |
 | Mis materiales | Conectada: manuales e índices **desarrollados y pendientes**: requiere publicar [sql/materiales_app_ethos.sql](sql/materiales_app_ethos.sql) |
+| Formularios (Form. 1, 2 y 3) | Conectada: PDF e imagen con **solo las clases del facilitador**: requiere publicar [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
 | Perfil | Datos del usuario logueado y **foto de perfil**; la foto, el modo claro/oscuro y el tema de color se guardan en el dispositivo |
 | Notificaciones (campana) | Conectada: **próxima clase** según la hora actual, con institución y próximo índice (sale de `mi-agenda`) |
 
@@ -70,6 +71,7 @@ src/
     (app)/intervenciones.tsx /intervenciones (páginas 4, 5 y 6 de APEX: Intervenciones realizadas)
     (app)/historial.tsx      /historial     (páginas 7 y 8 de APEX: Historial de intervenciones)
     (app)/evaluaciones.tsx   /evaluaciones  (página 11 de APEX)
+    (app)/formularios.tsx    /formularios   (Form. 1, 2 y 3 en PDF e imagen)
     (app)/marcar.tsx         /marcar        (página 2 de APEX: Registrar intervención)
     (app)/perfil.tsx         /perfil
   facilitadores/
@@ -91,6 +93,7 @@ src/
     realizadas.ts            Intervenciones realizadas: GET intervenciones-realizadas/*
     historial.ts             Historial de intervenciones: GET/PUT historial-intervenciones*
     editar-intervencion.tsx  Hoja "Editar intervención" (página 8)
+    formularios/             Form. 1, 2 y 3: datos (GET mis-formularios/*), dibujo, PDF (jsPDF) e imagen (SVG)
     intervenciones.ts        Marcar: listas en cascada, validaciones y guardado (mis-intervenciones)
     ubicacion.ts             GPS del dispositivo (expo-location)
     foto-perfil.ts           Foto de perfil: galería, recorte a 256 px y guardado en el dispositivo
@@ -136,8 +139,24 @@ Los registros de un facilitador **nunca se mezclan** con los de otro:
 | — · Inicio (KPIs y actividad) | `/` | `GET mi-agenda`, `GET mis-intervenciones/resumen`, `GET mis-intervenciones/recientes` | agenda + intervenciones |
 | 2 · Intervención | `/marcar` (botón **Marcar** y menú **Registrar intervención**) | `GET mis-intervenciones/inicio · horarios · clase · indices`, `POST mis-intervenciones` | [sql/intervenciones_app_ethos.sql](sql/intervenciones_app_ethos.sql) |
 | 4 · Intervenciones, 5 · Días, 6 · Manuales | `/intervenciones` (menú **Intervenciones realizadas**) | `GET intervenciones-realizadas/instituciones · clases · historial` | [sql/intervenciones_realizadas_app_ethos.sql](sql/intervenciones_realizadas_app_ethos.sql) |
-
+| — · Formularios 1, 2 y 3 (del sitio editorial-ethos-app) | `/formularios` (menú **Formularios**) | `GET mis-formularios/postulaciones · institucion · intervenciones · bloqueos` | [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
 | 7 · Historial de Intervenciones, 8 · Observación | `/historial` (menú **Historial de intervenciones**) y **Editar** en Intervenciones realizadas | `GET historial-intervenciones`, `GET` / `PUT historial-intervenciones/:id` | [sql/historial_app_ethos.sql](sql/historial_app_ethos.sql) |
+
+### Formularios (Form. 1, 2 y 3)
+
+Los tres formularios del sitio **editorial-ethos-app** (ver `GUIA_FORMULARIOS.md` de ese repo), en **PDF** e **imagen PNG**, con el mismo formato y las mismas reglas, pero **solo con los datos del facilitador logueado**: el servidor saca el `ID_FACILITADOR` del token (`PKG_FORMULARIOS_APP_ETHOS`) y nunca devuelve postulaciones, intervenciones ni bloqueos de otro.
+
+| Formulario | Qué muestra | Parámetros |
+|---|---|---|
+| **Form. 1** · Postulación anual | Cabecera, autoridades y horario de la institución, y **solo las clases del facilitador** en ella (activas), por turno con subtotal y total | Año lectivo e institución (solo aquellas donde tiene clases ese año) |
+| **Form. 2** · Reporte diario | Sus clases en la institución (secciones juntas), con las intervenciones 1° a 4° del período, 1/0, motivo y TOTAL | Año, institución y un mes o una etapa (tabla `ETAPAS`) |
+| **Form. 3** · Agenda semanal | Su semana de mañana y tarde en todas sus instituciones, con lo bloqueado (`FACILITADORES_DIAS_BLOQUEOS`) en rojo | Año lectivo |
+
+- Salen de **postulaciones** (no de pre-horarios), las activas (`NVL(ESTADO,'Activo') <> 'Inactivo'`). Sin Excel.
+- **Un dibujo, dos salidas**: cada formulario se dibuja una vez contra un "pintor" (`src/facilitadores/formularios/pintor.ts`). El PDF sale con jsPDF (oficio apaisado; el Form. 1 pagina, el 2 y el 3 van en una hoja) y la vista previa con react-native-svg. La imagen es esa misma vista: en el APK con `Svg.toDataURL`, en la web pasando el SVG por un `<canvas>`. El texto se mide con la Helvetica de jsPDF en las dos salidas, así cortan igual.
+- **APK**: el archivo se guarda en la caché y se abre el menú de compartir (`expo-sharing`). **Web/PWA**: se abre en una pestaña nueva, o se descarga si el navegador la bloquea.
+- Los textos fijos (declaración, nota, contacto, misión, coordinación nacional) están en `form1.ts` y `form2.ts`, igual que en el sitio. Los colores de los manuales salen de `COLOR_MANUAL`.
+- `expo-sharing` es un módulo nativo: hace falta un **APK nuevo**.
 
 ### Historial de intervenciones (páginas 7 y 8)
 
@@ -249,7 +268,7 @@ Cómo se porta una página:
 
 - **Barra superior:** título de la sección y la campana de notificaciones (sin avatar; la foto está en Inicio, el menú y Perfil).
 - **Menos de 800 px de ancho** (celulares): barra superior, y barra inferior con **Inicio · Marcar · Menú · Perfil · Salir**.
-  - **Menú** abre un panel con **todas** las secciones (Inicio, Registrar intervención, Intervenciones realizadas, Historial de intervenciones, Mi agenda, Mis materiales, Evaluaciones, Mi perfil) y el Centro de ayuda. Las secciones nuevas aparecen ahí solas.
+  - **Menú** abre un panel con **todas** las secciones (Inicio, Registrar intervención, Intervenciones realizadas, Historial de intervenciones, Mi agenda, Mis materiales, Evaluaciones, Formularios, Mi perfil) y el Centro de ayuda. Las secciones nuevas aparecen ahí solas.
   - **Salir** pide confirmación antes de cerrar la sesión.
 - **800 px o más** (tablets, escritorio, web): menú lateral fijo, y en Inicio la columna de calendario y accesos rápidos.
 - En Perfil → **Apariencia**: modo claro / oscuro / automático y 6 temas de color. También ahí se carga la foto de perfil.
@@ -265,6 +284,8 @@ Cómo se porta una página:
 | Historial / Editar: "Falta publicar en el backend los endpoints de historial-intervenciones" | No se corrió `sql/historial_app_ethos.sql` | Correrlo en APEX |
 | Intervenciones realizadas: "Falta publicar en el backend los endpoints de intervenciones-realizadas" | No se corrió `sql/intervenciones_realizadas_app_ethos.sql` | Correrlo en APEX |
 | Mis materiales: "Falta publicar en el backend el endpoint mis-materiales" | No se corrió `sql/materiales_app_ethos.sql` | Correrlo en APEX |
+| Formularios: "Falta publicar en el backend los endpoints de mis-formularios" | No se corrió `sql/formularios_app_ethos.sql` | Correrlo en APEX |
+| Formularios (APK): PDF o Imagen no abren nada | APK anterior a `expo-sharing` | Instalar un APK nuevo |
 | Inicio: un KPI dice "Falta publicar mis-intervenciones" | No se corrió (o no se volvió a correr) `sql/intervenciones_app_ethos.sql` | Correrlo en APEX |
 | Marcar: "Falta publicar en el backend los endpoints de mis-intervenciones" | No se corrió `sql/intervenciones_app_ethos.sql` | Correrlo en APEX |
 | Marcar: "Permití el acceso a la ubicación" | El navegador o el celular no dio permiso de ubicación | Habilitar la ubicación para la app y tocar **Reintentar** |

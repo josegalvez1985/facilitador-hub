@@ -121,6 +121,22 @@ Tocá **Editar** para cambiar el índice, si se desarrolló (Sí/No), el motivo 
 
 Las evaluaciones que te hicieron, de la más reciente a la más antigua: la calificación, la puntuación (sobre 33), los aspectos positivos y los aspectos a mejorar.
 
+## Formularios
+
+Tus formularios 1, 2 y 3, listos para imprimir o mandar, en **PDF** o como **imagen**. Salen solo con tus clases: nunca aparecen las de otro facilitador.
+
+- **Form. 1 · Postulación anual**: tus clases en una institución, con grados, manuales, horarios y docentes, y los datos y autoridades de la institución.
+- **Form. 2 · Reporte diario**: tus clases en una institución con las intervenciones de un mes o de una etapa: el índice, la fecha, 1 si la desarrollaste o 0 con el motivo, y el total.
+- **Form. 3 · Agenda semanal**: tu semana de mañana y de tarde en todas tus instituciones, con tus horarios bloqueados en rojo.
+
+1. Abrí **Menú** y tocá **Formularios**.
+2. Elegí el formulario arriba: **Form. 1**, **Form. 2** o **Form. 3**.
+3. Elegí el **año lectivo** y, en los formularios 1 y 2, la **institución**. En el Form. 2 elegí también el **mes** o la **etapa**.
+4. Mirá la **vista previa**. Con **Ampliar** la ves más grande y la podés recorrer de costado.
+5. Tocá **PDF** o **Imagen**. En el celular se abre el menú para compartir: abrilo con un visor, guardalo o mandalo por WhatsApp. En la computadora se abre en una pestaña nueva.
+
+> Las recuperaciones y el título de las autoridades salen en blanco, para que los completes a mano. Si una clase tuvo más de 4 intervenciones en el período, salen las primeras 4 y la pantalla te avisa.
+
 ## Mi perfil
 
 - **Información personal**: tu nombre, usuario y correo. Para corregirlos, pedíselo a tu coordinador.
