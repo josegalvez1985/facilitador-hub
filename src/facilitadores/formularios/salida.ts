@@ -1,7 +1,8 @@
 // Las salidas de los formularios: el PDF y la imagen PNG.
 //
 // - APK: se guardan en la caché de la app y se abre el menú de compartir del sistema (abrir con
-//   un visor de PDF, guardar, mandar por WhatsApp…).
+//   un visor de PDF, guardar, mandar por WhatsApp…). La imagen la dibuja el WebView de la vista
+//   previa (hoja-nativa.tsx), fuera del hilo principal.
 // - Web / PWA: se abren en una pestaña nueva; si el navegador no la deja abrir, se descargan.
 //   La pestaña se abre DENTRO del toque (antes de cualquier await), porque después el navegador
 //   la bloquea como ventana emergente.
@@ -10,7 +11,6 @@ import { Platform } from 'react-native';
 import { Asset } from 'expo-asset';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import type Svg from 'react-native-svg';
 
 import { cargarJsPdf, type Lamina, type Logo } from './pintor';
 import type { Documento } from './planilla';
@@ -25,15 +25,22 @@ export function pixelesImagen(l: Lamina) {
   return { ancho: Math.round(t.ancho * escala), alto: Math.round(t.alto * escala) };
 }
 
+/** Un respiro antes del trabajo pesado, para que la pantalla alcance a mostrar "Generando…". */
+const respiro = () => new Promise((ok) => setTimeout(ok, 50));
+
 /* ---- El logo (el de public/logo.png, el mismo del sitio) ------------------------------------- */
 
 let logo: Promise<Logo | null> | null = null;
 
-/** El logo como data URL. null si no se pudo leer: el formulario sale igual, sin él. */
+/**
+ * El logo como data URL. null si no se pudo leer: el formulario sale igual, sin él. Es una copia
+ * JPEG de 200 px de public/logo.png: jsPDF la inserta sin decodificarla (con el PNG de 512 px el
+ * PDF del Form. 2 tardaba segundos en el APK y pesaba 1 MB).
+ */
 export function cargarLogo(): Promise<Logo | null> {
   logo ??= (async () => {
     try {
-      const a = Asset.fromModule(require('../../../public/logo.png'));
+      const a = Asset.fromModule(require('../../../assets/images/logo-formularios.jpg'));
       await a.downloadAsync();
       let url: string;
       if (Platform.OS === 'web') {
@@ -45,9 +52,9 @@ export function cargarLogo(): Promise<Logo | null> {
           fr.readAsDataURL(blob);
         });
       } else {
-        url = `data:image/png;base64,${await new File(a.localUri ?? a.uri).base64()}`;
+        url = `data:image/jpeg;base64,${await new File(a.localUri ?? a.uri).base64()}`;
       }
-      return { url, ancho: a.width ?? 512, alto: a.height ?? 512 };
+      return { url, ancho: a.width ?? 200, alto: a.height ?? 200 };
     } catch {
       return null;
     }
@@ -126,23 +133,24 @@ export function sacarPdf(d: Documento): Promise<void> {
   const nombre = `${d.archivo}.pdf`;
   if (Platform.OS === 'web') return abrirEnPestana(async () => d.pdf(await cargarJsPdf()).output('blob'), nombre, 'el PDF');
   return (async () => {
-    const doc = d.pdf(await cargarJsPdf());
+    const m = await cargarJsPdf();
+    await respiro();
+    const doc = d.pdf(m);
     const uri = doc.output('datauristring');
     await compartir(uri.slice(uri.indexOf(',') + 1), nombre, 'application/pdf', 'com.adobe.pdf');
   })();
 }
 
 /**
- * La imagen PNG de la hoja. En el APK sale de la vista previa (`svg`, ya en pantalla); en la
- * web, del mismo dibujo como SVG. En la web, llamarla dentro del toque y sin await previo.
+ * La imagen PNG de la hoja. En el APK la dibuja el WebView de la vista previa (`rasterizar`); en
+ * la web, el navegador con el mismo SVG. En la web, llamarla dentro del toque y sin await previo.
  */
-export function sacarImagen(d: Documento, lamina: Lamina, svg: Svg | null): Promise<void> {
+export function sacarImagen(d: Documento, lamina: Lamina, rasterizar?: () => Promise<string>): Promise<void> {
   const nombre = `${d.archivo}.png`;
   if (Platform.OS === 'web') return abrirEnPestana(() => imagenWeb(lamina), nombre, 'la imagen');
   return (async () => {
-    if (!svg) throw new Error('La vista previa todavía no está lista');
-    const { ancho, alto } = pixelesImagen(lamina);
-    const base64 = await new Promise<string>((ok) => svg.toDataURL(ok, { width: ancho, height: alto }));
-    await compartir(base64, nombre, 'image/png', 'public.png');
+    if (!rasterizar) throw new Error('La vista previa todavía no está lista');
+    await respiro();
+    await compartir(await rasterizar(), nombre, 'image/png', 'public.png');
   })();
 }

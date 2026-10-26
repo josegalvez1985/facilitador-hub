@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { FileText, ImageDown, RefreshCw, TriangleAlert, UserRound, ZoomIn, ZoomOut } from 'lucide-react-native';
-import type Svg from 'react-native-svg';
 
 import { useSession } from '../auth/session';
 import { hoy, nombreMes } from '../fechas';
@@ -9,6 +8,7 @@ import { cargarBloqueo, cargarInstitucion, cargarIntervenciones, cargarMisPostul
 import { documentoForm1 } from '../formularios/form1';
 import { armarClases, documentoForm2, textoEtapa } from '../formularios/form2';
 import { armarAgenda, documentoForm3 } from '../formularios/form3';
+import { HojaNativa, type HojaNativaRef } from '../formularios/hoja-nativa';
 import { cargarJsPdf, type Lamina } from '../formularios/pintor';
 import type { Documento } from '../formularios/planilla';
 import { cargarLogo, sacarImagen, sacarPdf } from '../formularios/salida';
@@ -64,7 +64,8 @@ export function FormulariosScreen() {
   const [ancho, setAncho] = useState(0);
   const [grande, setGrande] = useState(false);
   const [ocupado, setOcupado] = useState<'pdf' | 'imagen' | null>(null);
-  const svg = useRef<Svg>(null);
+  const hojaNativa = useRef<HojaNativaRef>(null);
+  const esWeb = Platform.OS === 'web';
 
   // Sin ID_FACILITADOR no se piden datos: el servidor saca el facilitador del token.
   const id = facilitador.estado === 'listo' ? facilitador.id : null;
@@ -151,7 +152,8 @@ export function FormulariosScreen() {
   const sacar = (que: 'pdf' | 'imagen') => {
     if (h.tipo !== 'listo' || ocupado) return;
     setOcupado(que);
-    (que === 'pdf' ? sacarPdf(h.doc) : sacarImagen(h.doc, h.lamina, svg.current))
+    const hoja = hojaNativa.current;
+    (que === 'pdf' ? sacarPdf(h.doc) : sacarImagen(h.doc, h.lamina, hoja ? () => hoja.rasterizar() : undefined))
       .catch((e: unknown) => toast.error(que === 'pdf' ? 'No se pudo generar el PDF' : 'No se pudo generar la imagen', { description: e instanceof Error ? e.message : undefined }))
       .finally(() => setOcupado(null));
   };
@@ -276,8 +278,13 @@ export function FormulariosScreen() {
             <Text weight="semibold" size={14} style={{ flex: 1 }}>
               Vista previa
             </Text>
-            {h.tipo === 'listo' && (
+            {h.tipo === 'listo' && esWeb && (
               <Button size="sm" variant="ghost" icon={grande ? ZoomOut : ZoomIn} label={grande ? 'Achicar' : 'Ampliar'} onPress={() => setGrande(!grande)} />
+            )}
+            {h.tipo === 'listo' && !esWeb && (
+              <Text size={11} color={colors.mutedForeground}>
+                Pellizcá para ampliar
+              </Text>
             )}
           </View>
 
@@ -289,10 +296,16 @@ export function FormulariosScreen() {
                 {h.mensaje}
               </Text>
             )}
-            {h.tipo === 'listo' && ancho > 0 && (
+            {h.tipo === 'listo' && ancho > 0 && esWeb && (
               <ScrollView horizontal={grande} scrollEnabled={grande} style={s.hoja} accessibilityLabel={`Vista previa del ${h.doc.archivo}`}>
-                <LaminaSvg ref={svg} lamina={h.lamina} ancho={grande ? Math.max(ancho * 3, 1400) : ancho - 2} />
+                <LaminaSvg lamina={h.lamina} ancho={grande ? Math.max(ancho * 3, 1400) : ancho - 2} />
               </ScrollView>
+            )}
+            {/* En el APK, un WebView: react-native-svg dibuja la hoja en el hilo principal y la app no respondía. */}
+            {h.tipo === 'listo' && ancho > 0 && !esWeb && (
+              <View style={s.hoja} accessibilityLabel={`Vista previa del ${h.doc.archivo}`}>
+                <HojaNativa ref={hojaNativa} lamina={h.lamina} ancho={ancho - 2} />
+              </View>
             )}
           </View>
 
@@ -311,7 +324,7 @@ export function FormulariosScreen() {
             <Button variant="outline" icon={ImageDown} label={ocupado === 'imagen' ? 'Generando…' : 'Imagen'} onPress={() => sacar('imagen')} disabled={h.tipo !== 'listo' || ocupado !== null} style={{ flex: 1 }} />
           </View>
           <Text size={11} color={colors.mutedForeground} style={{ textAlign: 'center', lineHeight: 16 }}>
-            {Platform.OS === 'web' ? 'Se abre en una pestaña nueva (o se descarga).' : 'Se abre el menú para compartir: elegí un visor, guardalo o mandalo.'}
+            {esWeb ? 'Se abre en una pestaña nueva (o se descarga).' : 'Se abre el menú para compartir: elegí un visor, guardalo o mandalo.'}
           </Text>
         </Card>
       )}

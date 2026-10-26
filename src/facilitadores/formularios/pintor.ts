@@ -16,7 +16,7 @@ import type { jsPDF } from 'jspdf';
 
 export type Letra = { tam: number; negrita?: boolean; cursiva?: boolean; color?: string };
 
-/** El logo como data URL PNG, con su tamaño natural para no deformarlo. */
+/** El logo como data URL (JPEG o PNG), con su tamaño natural para no deformarlo. */
 export type Logo = { url: string; ancho: number; alto: number };
 
 export interface Pintor {
@@ -110,7 +110,8 @@ export class PintorPdf implements Pintor {
     return medir(s, l);
   }
   imagen(logo: Logo, x: number, y: number, w: number, h: number) {
-    this.doc.addImage(logo.url, 'PNG', this.px(x), this.py(y), w * this.k, h * this.k);
+    // JPEG: jsPDF lo inserta tal cual. Un PNG lo decodifica y recomprime en JavaScript (lento en el APK).
+    this.doc.addImage(logo.url, logo.url.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG', this.px(x), this.py(y), w * this.k, h * this.k);
   }
   nuevaPagina() {
     this.doc.addPage();

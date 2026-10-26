@@ -1,6 +1,6 @@
-// La hoja de un formulario dibujada en SVG: la vista previa en pantalla y, en el APK, la imagen
-// PNG (Svg.toDataURL). En la web la imagen sale de `svgMarkup`, el mismo dibujo como texto SVG.
-// Lo que se ve es lo que se descarga.
+// La hoja de un formulario dibujada en SVG. `LaminaSvg` (react-native-svg) es la vista previa en
+// la web; `svgMarkup` es el mismo dibujo como texto SVG, del que salen la imagen PNG de la web y,
+// en el APK, la vista previa y la imagen (hoja-nativa.tsx). Lo que se ve es lo que se descarga.
 
 import type { Ref } from 'react';
 import Svg, { Image as SvgImage, Line, Rect, Text as SvgText } from 'react-native-svg';
