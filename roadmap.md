@@ -26,8 +26,15 @@
 - [x] Manual de uso en Perfil → Ayuda (`docs/manual-usuario.md`, `npm run manual`).
 - [x] Campana de notificaciones: próxima clase e institución según la hora actual, con punto de "nueva" que se apaga al verla.
 - [x] Formularios 1, 2 y 3 (del sitio editorial-ethos-app) en PDF e imagen, solo con las clases del facilitador, con endpoints `mis-formularios/*`.
+- [x] Mis facturas: foto de la factura (cámara o galería) a Cloudinary, número, timbrado, fecha (en calendario) y mes, y ver, corregir o borrar las que están por revisar, con endpoints `mis-facturas/*`.
 
 ## Pendiente
+- [ ] Correr en APEX `sql/facturas_app_ethos.sql` (después de `cloudinary.sql` y `facturas_facilitadores.sql` del sitio; deben quedar 5 de 5 handlers) y probar alta, corrección y borrado con un facilitador real; confirmar que la factura aparece por revisar en Totales por Facilitador del sitio.
+- [ ] Generar un APK nuevo para Mis facturas: se habilitó el permiso de cámara de `expo-image-picker`.
+- [ ] Borrar las fotos de Cloudinary al borrar una factura: el `PKG_CLOUDINARY_ETHOS` de Oracle no tiene `BORRAR` (confirmado el 04/11/2026). Correr el `backend/cloudinary.sql` nuevo del sitio, probar con `PKG_CLOUDINARY_ETHOS.probar` y borrar a mano las fotos de prueba que quedaron.
+- [ ] Preset `fc` de Cloudinary: cambiar *Asset folder* de `samples/ecommerce` a `facturas-facilitadores` (o dejarlo vacío).
+- [ ] Revisar que `historial-intervenciones/:id` tenga GET y PUT en ORDS. Si falta el GET, volver a correr `sql/historial_app_ethos.sql` corregido (3 de 3).
+
 - [ ] Correr en APEX `sql/formularios_app_ethos.sql` (publica `mis-formularios/*`, 4 de 4) y probar los tres formularios con un facilitador real; comparar con el sitio editorial-ethos-app.
 - [ ] Generar un APK nuevo para Formularios (`expo-sharing` y `react-native-webview` son módulos nativos) y probar PDF e Imagen de los Form. 1, 2 y 3 en Android: antes la app quedaba "no responde".
 - [ ] Correr en APEX: `sql/historial_app_ethos.sql`, `sql/intervenciones_realizadas_app_ethos.sql`, `sql/agenda_app_ethos.sql`, `sql/materiales_app_ethos.sql` y de nuevo `sql/intervenciones_app_ethos.sql` (agrega el resumen ampliado y recientes); probar con TWALDE.

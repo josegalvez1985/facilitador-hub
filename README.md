@@ -17,6 +17,7 @@ Está hecha con **React Native + Expo**. Una sola base de código funciona en **
 | Historial de intervenciones (páginas 7 y 8 de APEX) | Conectado: búsqueda, filtros por mes y fecha, y edición: requiere publicar [sql/historial_app_ethos.sql](sql/historial_app_ethos.sql) |
 | Mis materiales | Conectada: manuales e índices **desarrollados y pendientes**: requiere publicar [sql/materiales_app_ethos.sql](sql/materiales_app_ethos.sql) |
 | Formularios (Form. 1, 2 y 3) | Conectada: PDF e imagen con **solo las clases del facilitador**: requiere publicar [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
+| Mis facturas | Conectada: el facilitador **saca o elige la foto** de su factura (va a Cloudinary), carga **número, timbrado, fecha** (en un calendario) y **mes**, y ve, corrige o borra las que están por revisar: requiere publicar [sql/facturas_app_ethos.sql](sql/facturas_app_ethos.sql) y un **APK nuevo** (permiso de cámara) |
 | Perfil | Datos del usuario logueado y **foto de perfil**; la foto, el modo claro/oscuro y el tema de color se guardan en el dispositivo |
 | Notificaciones (campana) | Conectada: **próxima clase** según la hora actual, con institución y próximo índice (sale de `mi-agenda`) |
 
@@ -72,6 +73,7 @@ src/
     (app)/historial.tsx      /historial     (páginas 7 y 8 de APEX: Historial de intervenciones)
     (app)/evaluaciones.tsx   /evaluaciones  (página 11 de APEX)
     (app)/formularios.tsx    /formularios   (Form. 1, 2 y 3 en PDF e imagen)
+    (app)/facturas.tsx       /facturas      (Mis facturas: foto y datos de la factura del mes)
     (app)/marcar.tsx         /marcar        (página 2 de APEX: Registrar intervención)
     (app)/perfil.tsx         /perfil
   facilitadores/
@@ -94,6 +96,9 @@ src/
     historial.ts             Historial de intervenciones: GET/PUT historial-intervenciones*
     editar-intervencion.tsx  Hoja "Editar intervención" (página 8)
     formularios/             Form. 1, 2 y 3: datos (GET mis-formularios/*), dibujo, PDF (jsPDF) e imagen (SVG)
+    facturas.ts              Mis facturas: mis-facturas/*, la foto (cámara o galería), la subida a Cloudinary y el formato del número
+    editar-factura.tsx       Formulario de alta / corrección de una factura
+    selector-fecha.tsx       Campo de fecha que se elige en un calendario (sin módulo nativo)
     intervenciones.ts        Marcar: listas en cascada, validaciones y guardado (mis-intervenciones)
     ubicacion.ts             GPS del dispositivo (expo-location)
     foto-perfil.ts           Foto de perfil: galería, recorte a 256 px y guardado en el dispositivo
@@ -140,6 +145,7 @@ Los registros de un facilitador **nunca se mezclan** con los de otro:
 | 2 · Intervención | `/marcar` (botón **Marcar** y menú **Registrar intervención**) | `GET mis-intervenciones/inicio · horarios · clase · indices`, `POST mis-intervenciones` | [sql/intervenciones_app_ethos.sql](sql/intervenciones_app_ethos.sql) |
 | 4 · Intervenciones, 5 · Días, 6 · Manuales | `/intervenciones` (menú **Intervenciones realizadas**) | `GET intervenciones-realizadas/instituciones · clases · historial` | [sql/intervenciones_realizadas_app_ethos.sql](sql/intervenciones_realizadas_app_ethos.sql) |
 | — · Formularios 1, 2 y 3 (del sitio editorial-ethos-app) | `/formularios` (menú **Formularios**) | `GET mis-formularios/postulaciones · institucion · intervenciones · bloqueos` | [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
+| — · Mis facturas (con "Totales por Facilitador" del sitio editorial-ethos-app) | `/facturas` (menú **Mis facturas**) | `GET` / `POST mis-facturas`, `PUT` / `DELETE mis-facturas/:id`, `POST mis-facturas/firma-foto` | [sql/facturas_app_ethos.sql](sql/facturas_app_ethos.sql) |
 | 7 · Historial de Intervenciones, 8 · Observación | `/historial` (menú **Historial de intervenciones**) y **Editar** en Intervenciones realizadas | `GET historial-intervenciones`, `GET` / `PUT historial-intervenciones/:id` | [sql/historial_app_ethos.sql](sql/historial_app_ethos.sql) |
 
 ### Formularios (Form. 1, 2 y 3)
@@ -159,6 +165,27 @@ Los tres formularios del sitio **editorial-ethos-app** (ver `GUIA_FORMULARIOS.md
 - **APK**: el archivo se guarda en la caché y se abre el menú de compartir (`expo-sharing`). **Web/PWA**: se abre en una pestaña nueva, o se descarga si el navegador la bloquea.
 - Los textos fijos (declaración, nota, contacto, misión, coordinación nacional) están en `form1.ts` y `form2.ts`, igual que en el sitio. Los colores de los manuales salen de `COLOR_MANUAL`.
 - `expo-sharing` y `react-native-webview` son módulos nativos: hace falta un **APK nuevo**.
+
+### Mis facturas
+
+El facilitador envía la **foto** y los **datos** de su factura de cada mes, y el administrador la controla desde **Totales por Facilitador** del sitio editorial-ethos-app. Es la misma tabla (`FACTURAS_FACILITADORES`) y son las mismas reglas. El servidor saca el `ID_FACILITADOR` del token y nunca devuelve cantidad, sueldo ni monto.
+
+- **Lista:** las facturas del facilitador, de la más nueva a la más vieja, con la miniatura de la foto, el mes, el número, el timbrado, la fecha, cuándo se envió y su estado: **Por revisar** (`CANTIDAD = 0`) o **Revisada**. Tocando la miniatura se ve la foto en grande, y **Abrir original** abre el archivo.
+- **Corregir / Borrar:** solo mientras está por revisar. Una revisada no se toca: el servidor responde 409.
+- **Formulario** (`editar-factura.tsx`): va dentro de la pantalla y no en un modal, para que el `KeyboardAvoidingView` del shell evite que el teclado tape los campos.
+  - **Foto**: obligatoria en el alta. Se saca con la cámara o se elige de la galería (`expo-image-picker`) y se achica a 2000 px como máximo, en JPEG (`expo-image-manipulator`).
+  - **Número**: se acomoda mientras se escribe, con o sin guiones (`mascaraNroFactura`), y al salir del campo queda `001-001-0000123`.
+  - **Timbrado**: opcional, solo números.
+  - **Fecha**: se elige en un calendario (`selector-fecha.tsx`, React Native puro), entre el 01/01/2024 y hoy, con atajos **Hoy** y **Ayer**.
+  - **Mes**: año y mes. Los meses futuros y los que ya tienen otra factura no se pueden elegir, y se propone el último mes sin factura.
+- **Subida:** al tocar **Enviar**, la app pide `POST mis-facturas/firma-foto` (la firma vence en una hora), sube el archivo **directo a Cloudinary** (`pedirExterno` de `api.ts`, con el mismo User-Agent) y manda el `secure_url` como `foto_url`. Si el guardado falla, el reintento no vuelve a subir la foto. Sin lectura con IA (decisión del 04/11/2026).
+- Si Cloudinary no está configurado en Oracle (`fotos_habilitadas: false`), no se puede cargar una factura nueva.
+- **Cámara:** el permiso está en `app.json` (`expo-image-picker` → `cameraPermission`). Hace falta un **APK nuevo**.
+- **Borrar la foto en Cloudinary:** al borrar una factura, o al cambiarle la foto, el servidor borra la foto vieja de Cloudinary después de guardar, con `PKG_CLOUDINARY_ETHOS.borrar`. Esa función viene en el `backend/cloudinary.sql` nuevo del sitio.
+  - Si el paquete instalado en Oracle no la tiene, la factura se borra igual y la foto queda en Cloudinary. El script de la app lo avisa con `[WARN]`.
+  - Para saber si está: `SELECT procedure_name FROM user_procedures WHERE object_name = 'PKG_CLOUDINARY_ETHOS'` tiene que listar **BORRAR**.
+  - Correr el `cloudinary.sql` nuevo del sitio no pisa la configuración (clave, secreto, cloud y preset).
+- **Preset de Cloudinary (`fc`):** tiene que ser *Signed*. La app pide la carpeta `facturas-facilitadores`. Si en el preset figura otra carpeta (por ejemplo la de ejemplo, `samples/ecommerce`), conviene cambiarla.
 
 ### Historial de intervenciones (páginas 7 y 8)
 
@@ -270,7 +297,7 @@ Cómo se porta una página:
 
 - **Barra superior:** título de la sección y la campana de notificaciones (sin avatar; la foto está en Inicio, el menú y Perfil).
 - **Menos de 800 px de ancho** (celulares): barra superior, y barra inferior con **Inicio · Marcar · Menú · Perfil · Salir**.
-  - **Menú** abre un panel con **todas** las secciones (Inicio, Registrar intervención, Intervenciones realizadas, Historial de intervenciones, Mi agenda, Mis materiales, Evaluaciones, Formularios, Mi perfil) y el Centro de ayuda. Las secciones nuevas aparecen ahí solas.
+  - **Menú** abre un panel con **todas** las secciones (Inicio, Registrar intervención, Intervenciones realizadas, Historial de intervenciones, Mi agenda, Mis materiales, Evaluaciones, Formularios, Mis facturas, Mi perfil) y el Centro de ayuda. Las secciones nuevas aparecen ahí solas.
   - **Salir** pide confirmación antes de cerrar la sesión.
 - **800 px o más** (tablets, escritorio, web): menú lateral fijo, y en Inicio la columna de calendario y accesos rápidos.
 - En Perfil → **Apariencia**: modo claro / oscuro / automático y 6 temas de color. También ahí se carga la foto de perfil.
@@ -288,6 +315,10 @@ Cómo se porta una página:
 | Mis materiales: "Falta publicar en el backend el endpoint mis-materiales" | No se corrió `sql/materiales_app_ethos.sql` | Correrlo en APEX |
 | Formularios: "Falta publicar en el backend los endpoints de mis-formularios" | No se corrió `sql/formularios_app_ethos.sql` | Correrlo en APEX |
 | Formularios (APK): PDF o Imagen no abren nada, o la app "no responde" | APK anterior a `expo-sharing` / `react-native-webview` (la vista previa con react-native-svg bloqueaba el hilo principal) | Instalar un APK nuevo |
+| Mis facturas: "Falta publicar en el backend los endpoints de mis-facturas" | No se corrió `sql/facturas_app_ethos.sql` | Correrlo en APEX, después de `cloudinary.sql` y `facturas_facilitadores.sql` del sitio |
+| Mis facturas: "Todavía no se pueden subir fotos" | Cloudinary no está configurado en Oracle (`PKG_CLOUDINARY_ETHOS.falta`) | Configurarlo como en `cloudinary.sql` del sitio |
+| Mis facturas (APK): **Sacar foto** no abre la cámara | APK anterior al permiso de cámara | Instalar un APK nuevo |
+| Mis facturas: al borrar, la foto queda en Cloudinary | El `PKG_CLOUDINARY_ETHOS` de Oracle no tiene `BORRAR` (el script lo avisa con `[WARN]`) | Borrarla a mano en Cloudinary, o correr el `cloudinary.sql` nuevo del sitio |
 | Inicio: un KPI dice "Falta publicar mis-intervenciones" | No se corrió (o no se volvió a correr) `sql/intervenciones_app_ethos.sql` | Correrlo en APEX |
 | Marcar: "Falta publicar en el backend los endpoints de mis-intervenciones" | No se corrió `sql/intervenciones_app_ethos.sql` | Correrlo en APEX |
 | Marcar: "Permití el acceso a la ubicación" | El navegador o el celular no dio permiso de ubicación | Habilitar la ubicación para la app y tocar **Reintentar** |

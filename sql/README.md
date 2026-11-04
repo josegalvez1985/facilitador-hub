@@ -13,12 +13,13 @@ Esa es la URL de `EXPO_PUBLIC_API_URL` en `.env`.
 | [ords_modulo_ethos_export.sql](ords_modulo_ethos_export.sql) | Exportación del módulo `ethos` **tal como está publicado**: es la referencia de verdad. Está **incompleta**: se corta en `menu-paginas`. Reemplazala por la exportación completa (ORDS → REST → Export). |
 | [auth_facilitadores.sql](auth_facilitadores.sql) | Alternativa **no usada y no publicada**: el script de autenticación renombrado a `FACILITADORES_TOKENS` / `PKG_AUTH_FACILITADORES` / módulo `facilitadores`. Se descartó porque sus tokens no sirven para los endpoints de negocio de `ethos`, que validan contra `ETHOS_TOKENS`. **No correrlo** salvo que se migren también esos endpoints. |
 | [facilitador_app_ethos.sql](facilitador_app_ethos.sql) | **Para correr una vez en APEX.** Crea el paquete `PKG_FACILITADOR_APP_ETHOS` y publica en `ethos` los endpoints `GET mi-facilitador` y `GET mis-evaluaciones`. No redefine el módulo ni toca tablas. |
-| [historial_app_ethos.sql](historial_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_HISTORIAL_APP_ETHOS` (páginas 7 y 8) y publica `historial-intervenciones` y `historial-intervenciones/:id` (GET y PUT). No pisa rutas existentes. |
+| [historial_app_ethos.sql](historial_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_HISTORIAL_APP_ETHOS` (páginas 7 y 8) y publica `historial-intervenciones` y `historial-intervenciones/:id` (GET y PUT). No pisa rutas existentes. **Si lo corriste antes del 04/11/2026**, revisá que `:id` tenga GET y PUT (ver *Rutas con dos métodos*): si falta el GET, "Editar intervención" no abre. Volvé a correr el script y la salida tiene que decir 3 de 3. |
 | [intervenciones_realizadas_app_ethos.sql](intervenciones_realizadas_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_REALIZADAS_APP_ETHOS` (páginas 4, 5 y 6) y publica `intervenciones-realizadas/*`. No pisa rutas existentes. |
 | [materiales_app_ethos.sql](materiales_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_MATERIALES_APP_ETHOS` (Mis materiales) y publica `GET mis-materiales`. No pisa rutas existentes. |
 | [agenda_app_ethos.sql](agenda_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_AGENDA_APP_ETHOS` (Mis horarios, página 3) y publica `GET mi-agenda`. No pisa rutas existentes. |
 | [intervenciones_app_ethos.sql](intervenciones_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_INTERVENCIONES_APP_ETHOS` (Marcar, página 2) y publica `mis-intervenciones/*`. No pisa rutas existentes: si alguna ya existe y no es de este paquete, se detiene sin tocar nada. |
 | [formularios_app_ethos.sql](formularios_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_FORMULARIOS_APP_ETHOS` (Form. 1, 2 y 3) y publica `mis-formularios/*`. Solo lectura. No pisa rutas existentes. |
+| [facturas_app_ethos.sql](facturas_app_ethos.sql) | **Para correr una vez en APEX**, después de `cloudinary.sql` y `facturas_facilitadores.sql` del sitio. Crea `PKG_FACTURAS_APP_ETHOS` (Mis facturas) y publica `mis-facturas/*`: el facilitador sube la foto de su factura física. Escribe en `FACTURAS_FACILITADORES`, la misma tabla del sitio. No pisa rutas existentes. |
 
 Nada de esto se ejecuta desde la app.
 
@@ -165,6 +166,49 @@ Todos piden `Authorization: Bearer <token>` y se llaman con `authFetch`. Los par
 | `inventarios`, `inventarios/*` | GET, POST | `PKG_INVENTARIOS_ETHOS` | `id_sucursal, items, …` | No es de esta app |
 
 Las firmas exactas y los comentarios de cada handler están en la exportación. La forma de las respuestas (`data`, paginación) no aparece ahí: la definen los paquetes PL/SQL, que no están en este repo.
+
+## Mis facturas (`PKG_FACTURAS_APP_ETHOS`)
+
+El facilitador sube su factura física; el administrador la controla desde **Totales por
+Facilitador** del sitio editorial-ethos-app. **Misma tabla** (`FACTURAS_FACILITADORES`) y mismas
+reglas que el sitio. Script: [facturas_app_ethos.sql](facturas_app_ethos.sql), **para correr una
+vez en APEX** después de `backend/cloudinary.sql` y `backend/facturas_facilitadores.sql` del
+sitio (la tabla, `FOTO_URL` y `PKG_CLOUDINARY_ETHOS`).
+
+| Método | Ruta | Envía / responde |
+|---|---|---|
+| GET | `mis-facturas` | `{ success, es_facilitador, fotos_habilitadas, data: [ { id_factura, nro_factura, timbrado, fecha_factura, anio, mes, fecha_desde, fecha_hasta, foto_url, revisada, cargado_el } ] }`. Las del facilitador del token, las más nuevas primero. **Sin cantidad, sueldo ni monto.** |
+| POST | `mis-facturas` | `{ nro_factura, timbrado, fecha_factura, anio, mes, foto_url }` → 200 `{ id_factura, nro_factura }` · 400 `{ message, campo }` · 403 no es facilitador · 409 número repetido o mes ya facturado |
+| PUT | `mis-facturas/:id` | Lo mismo; `foto_url` vacío deja la que había. 404 si no es suya · 409 si ya está revisada |
+| DELETE | `mis-facturas/:id` | 404 si no es suya · 409 si ya está revisada. Sin cuerpo ni `Content-Type` (ver *CORS*) |
+| POST | `mis-facturas/firma-foto` | `{ cloud_name, upload_url, campos: { api_key, timestamp, upload_preset, asset_folder, signature } }` · 503 si falta configurar Cloudinary |
+
+- **Por revisar = `CANTIDAD = 0`.** Sin columna de estado (decisión del 04/11/2026). La app
+  guarda la factura con `CANTIDAD`, `SUELDO` y `MONTO` en 0; el administrador completa cantidad y
+  sueldo en el sitio y, al guardar, queda revisada (`revisada: true`). Mientras está por revisar
+  el facilitador la corrige o la borra; revisada, ya no.
+- **El período es un mes** (`anio`, `mes`): desde el 1 hasta el último día. No un mes que todavía
+  no empezó. Una factura por mes: dos del mismo facilitador no se pisan (la misma regla del sitio;
+  las dos puntas bloquean la fila de `FACILITADORES` al guardar).
+- `nro_factura` se guarda siempre como `001-001-0000123` (acepta los 13 dígitos juntos o
+  `1-1-123`). El mismo número con el mismo timbrado no se repite. `timbrado`, opcional y solo
+  dígitos. `fecha_factura`, obligatoria y no posterior a hoy (Paraguay).
+- **La foto es obligatoria en el alta.** La app la sube **directo a Cloudinary**: primero
+  `POST mis-facturas/firma-foto`, después un `POST` multipart a `upload_url` con el archivo
+  (`file`) y cada uno de `campos` tal cual, y el `secure_url` de la respuesta va como `foto_url`.
+  El preset es Signed: la firma la hace Oracle y el secreto no sale de ahí. Solo se acepta un
+  enlace de nuestro cloud. La firma vence en una hora: pedirla justo antes de subir.
+- **Borrar la foto.** Después del `COMMIT`, al borrar una factura o al reemplazarle la foto, `limpiar_foto` borra de Cloudinary la foto que ya no usa ninguna factura, con `PKG_CLOUDINARY_ETHOS.borrar`.
+  - Esa llamada es dinámica: el paquete compila aunque `BORRAR` no exista. El `PKG_CLOUDINARY_ETHOS` viejo no la tiene, y con la llamada directa el paquete no compilaba (`PLS-00302`).
+  - Sin `BORRAR`, la factura se borra igual, la foto queda en Cloudinary y la respuesta trae `aviso`. La app no lo muestra.
+  - Se arregla corriendo el `backend/cloudinary.sql` nuevo del sitio, que no pisa `CLOUDINARY_CONFIG`.
+- **Salida esperada del script:** `[OK] PKG_FACTURAS_APP_ETHOS compilado`, `Handlers de mis-facturas publicados: 5 de 5`, si está `BORRAR` y si Cloudinary está configurado.
+
+### Rutas con dos métodos
+
+`ORDS.DEFINE_TEMPLATE` sobre una ruta que ya existe la **reemplaza y borra sus handlers**. Con dos métodos en la misma ruta (`mis-facturas` GET y POST, `mis-facturas/:id` PUT y DELETE), publicar el segundo borraba el primero: el 04/11/2026 quedaron 3 de 5. Sin el GET, el navegador mostraba un error de CORS ("authorization is not allowed").
+
+Los scripts ahora crean la ruta **solo si no existe** (miran `USER_ORDS_TEMPLATES`). `historial_app_ethos.sql` tenía el mismo problema y quedó corregido igual.
 
 ## CORS
 

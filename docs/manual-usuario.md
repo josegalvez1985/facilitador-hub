@@ -137,6 +137,24 @@ Tus formularios 1, 2 y 3, listos para imprimir o mandar, en **PDF** o como **ima
 
 > Las recuperaciones y el título de las autoridades salen en blanco, para que los completes a mano. Si una clase tuvo más de 4 intervenciones en el período, salen las primeras 4 y la pantalla te avisa.
 
+## Mis facturas
+
+Acá enviás la factura de cada mes: le sacás una foto y completás sus datos. La coordinación la revisa después.
+
+1. Abrí **Menú** y tocá **Mis facturas**.
+2. Tocá **Cargar una factura**.
+3. Tocá **Sacar foto** para usar la cámara, o **Elegir de la galería** si ya tenés la foto. Que se vea la factura entera, con buena luz y sin reflejos.
+4. Escribí el **número de factura** (por ejemplo 001-001-0001235; podés escribirlo con o sin guiones, se ponen solos) y el **timbrado**.
+5. Tocá la **fecha de la factura** y elegí el día en el calendario. **Hoy** y **Ayer** la eligen de un toque.
+6. Elegí el **mes** que cubre la factura. Los meses que ya tienen factura aparecen como **cargada** y no se pueden elegir.
+7. Tocá **Enviar factura**.
+
+- **Por revisar**: la coordinación todavía no la vio. Podés tocar **Corregir** para cambiar un dato o la foto, o **Borrar** para sacarla.
+- **Revisada**: ya quedó controlada y no se puede cambiar. Si tiene un error, avisale a la coordinación.
+- Tocá la foto de una factura para verla en grande.
+
+> Va una sola factura por mes, y no podés cargar un mes que todavía no empezó ni una fecha posterior a hoy. La foto es obligatoria.
+
 ## Mi perfil
 
 - **Información personal**: tu nombre, usuario y correo. Para corregirlos, pedíselo a tu coordinador.
@@ -172,6 +190,10 @@ Revisá tu señal o tu Wi-Fi y tocá **Reintentar**. No perdiste la sesión.
 ### No puedo guardar la intervención
 
 Revisá que la app tenga permiso de **ubicación** y que estén completos los campos marcados con \*. Los errores aparecen en rojo debajo de cada campo.
+
+### No puedo corregir ni borrar una factura
+
+Solo se pueden cambiar las facturas **por revisar**. Si ya dice **Revisada**, pedile la corrección a la coordinación.
 
 ### Mis datos personales están mal
 

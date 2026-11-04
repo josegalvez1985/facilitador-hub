@@ -378,11 +378,18 @@ DECLARE
 ';
 
   PROCEDURE publicar(p_pattern IN VARCHAR2, p_method IN VARCHAR2, p_llamada IN VARCHAR2) IS
+    l_existe NUMBER;
   BEGIN
     BEGIN ORDS.DELETE_HANDLER('ethos', p_pattern, p_method); EXCEPTION WHEN OTHERS THEN NULL; END;
-    BEGIN
+    -- La ruta se crea SOLO si no existe. ORDS.DEFINE_TEMPLATE sobre una ruta que ya existe la
+    -- REEMPLAZA y borra sus handlers: publicar el PUT de :id borraba el GET (abrir "Editar").
+    SELECT COUNT(*) INTO l_existe
+      FROM USER_ORDS_TEMPLATES t
+      JOIN USER_ORDS_MODULES   m ON m.ID = t.MODULE_ID
+     WHERE m.NAME = 'ethos' AND t.URI_TEMPLATE = p_pattern;
+    IF l_existe = 0 THEN
       ORDS.DEFINE_TEMPLATE(p_module_name => 'ethos', p_pattern => p_pattern, p_priority => 0, p_etag_type => 'NONE');
-    EXCEPTION WHEN OTHERS THEN NULL; END;   -- ya existia (es de este paquete: se verifico antes)
+    END IF;
     ORDS.DEFINE_HANDLER(
         p_module_name => 'ethos',
         p_pattern     => p_pattern,

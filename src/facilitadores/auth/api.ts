@@ -75,6 +75,15 @@ async function pedir(input: string, init: RequestInit): Promise<Response> {
   }
 }
 
+/**
+ * Para un servicio que NO es el backend y no lleva token: la subida directa a Cloudinary
+ * (mis-facturas). Misma identidad que el resto (nunca "okhttp") y sin red = SinConexion.
+ * Nunca pasarle un Authorization: lo protegido va por authFetch.
+ */
+export function pedirExterno(input: string, init: RequestInit): Promise<Response> {
+  return pedir(input, init);
+}
+
 /** Token muerto aunque el status no llegue como 401. */
 function esTokenInvalido(res: Response, data: { success?: unknown; message?: unknown }) {
   return (

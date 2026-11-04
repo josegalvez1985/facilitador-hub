@@ -49,8 +49,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Facilitadores usa tus fotos para que elijas tu foto de perfil.",
-          "cameraPermission": false,
+          "photosPermission": "Facilitadores usa tus fotos para que elijas tu foto de perfil o la foto de tu factura.",
+          "cameraPermission": "Facilitadores usa la cámara para que le saques una foto a tu factura.",
           "microphonePermission": false
         }
       ],
