@@ -92,13 +92,33 @@ export async function eliminarFactura(id: number): Promise<void> {
 /* La foto                                                                   */
 /* ------------------------------------------------------------------------- */
 
-/** Lado más largo en px: alcanza para leer número y timbrado, y sube rápido con datos móviles. */
-const LADO_MAXIMO = 2000;
+/** Tope del archivo que se sube a Cloudinary. */
+const TOPE_BYTES = 3 * 1024 * 1024;
 
 /**
- * Saca una foto con la cámara o la elige de la galería, y la devuelve achicada a JPEG.
- * null si se cancela. En la PWA, "cámara" abre la cámara del celular (o el selector de archivos
- * en una computadora).
+ * De la más nítida a la más liviana (lado más largo en px y calidad JPEG): se queda con la
+ * primera que entra en el tope. 4000 px es la foto entera de un celular de 12 MP; la última
+ * pesa menos de 1 MB y se usa siempre, aunque ninguna anterior haya entrado.
+ */
+const INTENTOS = [
+  { lado: 4000, calidad: 0.9 },
+  { lado: 3200, calidad: 0.85 },
+  { lado: 2600, calidad: 0.8 },
+  { lado: 2000, calidad: 0.75 },
+  { lado: 1600, calidad: 0.7 },
+];
+
+/** Bytes del archivo a partir de su base64 (con o sin el prefijo data:). */
+function bytesDeBase64(base64: string): number {
+  const b = base64.slice(base64.indexOf(',') + 1);
+  const relleno = b.endsWith('==') ? 2 : b.endsWith('=') ? 1 : 0;
+  return Math.floor((b.length * 3) / 4) - relleno;
+}
+
+/**
+ * Saca una foto con la cámara o la elige de la galería, y la devuelve como JPEG de hasta 3 MB,
+ * lo más nítida que entre. null si se cancela. En la PWA, "cámara" abre la cámara del celular
+ * (o el selector de archivos en una computadora).
  */
 export async function tomarFoto(origen: 'camara' | 'galeria'): Promise<FotoLocal | null> {
   if (origen === 'camara' && Platform.OS !== 'web') {
@@ -110,14 +130,18 @@ export async function tomarFoto(origen: 'camara' | 'galeria'): Promise<FotoLocal
   const asset = r.canceled ? undefined : r.assets?.[0];
   if (!asset) return null;
 
-  const ctx = ImageManipulator.manipulate(asset.uri);
   const { width, height } = asset;
-  if (Math.max(width, height) > LADO_MAXIMO) {
-    ctx.resize(width >= height ? { width: LADO_MAXIMO } : { height: LADO_MAXIMO });
+  let foto: FotoLocal | null = null;
+  for (const { lado, calidad } of INTENTOS) {
+    // Si la foto ya es más chica que este lado, solo cambia la calidad: nunca se agranda.
+    const ctx = ImageManipulator.manipulate(asset.uri);
+    if (Math.max(width, height) > lado) ctx.resize(width >= height ? { width: lado } : { height: lado });
+    const imagen = await ctx.renderAsync();
+    const res = await imagen.saveAsync({ format: SaveFormat.JPEG, compress: calidad, base64: true });
+    foto = { uri: res.uri, ancho: res.width, alto: res.height };
+    if (res.base64 && bytesDeBase64(res.base64) <= TOPE_BYTES) break;
   }
-  const imagen = await ctx.renderAsync();
-  const res = await imagen.saveAsync({ format: SaveFormat.JPEG, compress: 0.75 });
-  return { uri: res.uri, ancho: res.width, alto: res.height };
+  return foto;
 }
 
 type Firma = { upload_url?: string; campos?: Record<string, unknown> };
