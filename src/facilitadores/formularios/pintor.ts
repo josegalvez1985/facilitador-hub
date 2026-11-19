@@ -6,7 +6,7 @@
 //   sale la imagen PNG. En el sitio (editorial-ethos-app) la imagen salía de un <canvas>, que en
 //   el APK no existe.
 //
-// Los dos miden el texto con las métricas de Helvetica de jsPDF, así el corte de líneas y el
+// Los dos miden el texto con las métricas de Helvetica (o Times) de jsPDF, así el corte de líneas y el
 // achicado de letra dan igual en el PDF, la vista previa y la imagen.
 //
 // Los colores de los formularios son los del papel impreso (fondo blanco), no los del tema de
@@ -14,7 +14,8 @@
 
 import type { jsPDF } from 'jspdf';
 
-export type Letra = { tam: number; negrita?: boolean; cursiva?: boolean; color?: string };
+/** `serif`: Times (el Acuerdo); sin él, Helvetica (los formularios). */
+export type Letra = { tam: number; negrita?: boolean; cursiva?: boolean; color?: string; serif?: boolean };
 
 /** El logo como data URL (JPEG o PNG), con su tamaño natural para no deformarlo. */
 export type Logo = { url: string; ancho: number; alto: number };
@@ -63,7 +64,7 @@ export async function cargarJsPdf() {
 }
 
 function fuente(doc: jsPDF, l: Letra, tam: number) {
-  doc.setFont('helvetica', l.negrita && l.cursiva ? 'bolditalic' : l.negrita ? 'bold' : l.cursiva ? 'italic' : 'normal');
+  doc.setFont(l.serif ? 'times' : 'helvetica', l.negrita && l.cursiva ? 'bolditalic' : l.negrita ? 'bold' : l.cursiva ? 'italic' : 'normal');
   doc.setFontSize(tam);
 }
 
@@ -123,7 +124,7 @@ export class PintorPdf implements Pintor {
 export type Trazo =
   | { k: 'rect'; x: number; y: number; w: number; h: number; fondo: string | null; borde: string | null; grosor: number }
   | { k: 'linea'; x1: number; y1: number; x2: number; y2: number; color: string; grosor: number }
-  | { k: 'texto'; s: string; x: number; y: number; tam: number; negrita: boolean; cursiva: boolean; color: string; ancho: number }
+  | { k: 'texto'; s: string; x: number; y: number; tam: number; negrita: boolean; cursiva: boolean; serif: boolean; color: string; ancho: number }
   | { k: 'imagen'; url: string; x: number; y: number; w: number; h: number };
 
 /** Una hoja dibujada: sus trazos y su tamaño en unidades. */
@@ -140,7 +141,7 @@ export class PintorSvg implements Pintor {
   texto(s: string, x: number, y: number, l: Letra) {
     const limpio = t(s);
     if (!limpio.trim()) return;
-    this.trazos.push({ k: 'texto', s: limpio, x, y, tam: l.tam, negrita: !!l.negrita, cursiva: !!l.cursiva, color: l.color ?? NEGRO, ancho: medir(limpio, l) });
+    this.trazos.push({ k: 'texto', s: limpio, x, y, tam: l.tam, negrita: !!l.negrita, cursiva: !!l.cursiva, serif: !!l.serif, color: l.color ?? NEGRO, ancho: medir(limpio, l) });
   }
   ancho(s: string, l: Letra) {
     return medir(s, l);

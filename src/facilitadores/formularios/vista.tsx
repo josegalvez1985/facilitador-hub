@@ -14,12 +14,14 @@ export const PAD = 12;
 const BASE = 0.34;
 
 const FUENTE = 'Helvetica, Arial, sans-serif';
+const FUENTE_SERIF = "'Times New Roman', Times, serif";
+const fuenteDe = (serif: boolean) => (serif ? FUENTE_SERIF : FUENTE);
 
 export const tamanoLamina = (l: Lamina) => ({ ancho: l.ancho + 2 * PAD, alto: l.alto + 2 * PAD });
 
 /**
  * La hoja a `ancho` píxeles de pantalla. Cada texto lleva `textLength` (el ancho medido con
- * jsPDF), así ocupa lo mismo que en el PDF aunque el sistema no tenga Helvetica.
+ * jsPDF), así ocupa lo mismo que en el PDF aunque el sistema no tenga Helvetica ni Times.
  */
 export function LaminaSvg({ lamina, ancho, ref }: { lamina: Lamina; ancho: number; ref?: Ref<Svg> }) {
   const t = tamanoLamina(lamina);
@@ -45,7 +47,7 @@ function TrazoSvg({ tr }: { tr: Trazo }) {
           x={tr.x}
           y={tr.y + tr.tam * BASE}
           fontSize={tr.tam}
-          fontFamily={FUENTE}
+          fontFamily={fuenteDe(tr.serif)}
           fontWeight={tr.negrita ? 'bold' : 'normal'}
           fontStyle={tr.cursiva ? 'italic' : 'normal'}
           fill={tr.color}
@@ -72,7 +74,7 @@ export function svgMarkup(lamina: Lamina, ancho: number, alto: number): string {
       case 'linea':
         return `<line x1="${n(tr.x1)}" y1="${n(tr.y1)}" x2="${n(tr.x2)}" y2="${n(tr.y2)}" stroke="${tr.color}" stroke-width="${n(tr.grosor)}"/>`;
       case 'texto':
-        return `<text x="${n(tr.x)}" y="${n(tr.y + tr.tam * BASE)}" font-size="${n(tr.tam)}" font-family="${FUENTE}" font-weight="${tr.negrita ? 'bold' : 'normal'}" font-style="${tr.cursiva ? 'italic' : 'normal'}" fill="${tr.color}" textLength="${n(tr.ancho)}" lengthAdjust="spacingAndGlyphs">${esc(tr.s)}</text>`;
+        return `<text x="${n(tr.x)}" y="${n(tr.y + tr.tam * BASE)}" font-size="${n(tr.tam)}" font-family="${esc(fuenteDe(tr.serif))}" font-weight="${tr.negrita ? 'bold' : 'normal'}" font-style="${tr.cursiva ? 'italic' : 'normal'}" fill="${tr.color}" textLength="${n(tr.ancho)}" lengthAdjust="spacingAndGlyphs">${esc(tr.s)}</text>`;
       case 'imagen':
         return `<image x="${n(tr.x)}" y="${n(tr.y)}" width="${n(tr.w)}" height="${n(tr.h)}" href="${tr.url}" preserveAspectRatio="none"/>`;
     }

@@ -26,6 +26,7 @@
 - [x] Manual de uso en Perfil → Ayuda (`docs/manual-usuario.md`, `npm run manual`).
 - [x] Campana de notificaciones: próxima clase e institución según la hora actual, con punto de "nueva" que se apaga al verla.
 - [x] Formularios 1, 2 y 3 (del sitio editorial-ethos-app) en PDF e imagen, solo con las clases del facilitador, con endpoints `mis-formularios/*`.
+- [x] Formularios → Acuerdo de cooperación en PDF (ver y descargar), completo con la institución y su director/a, solo de las instituciones del facilitador.
 - [x] Mis facturas: foto de la factura (cámara o galería) a Cloudinary, número, timbrado, fecha (en calendario) y mes, y ver, corregir o borrar las que están por revisar, con endpoints `mis-facturas/*`.
 
 ## Pendiente

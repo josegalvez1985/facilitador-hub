@@ -123,19 +123,21 @@ Las evaluaciones que te hicieron, de la más reciente a la más antigua: la cali
 
 ## Formularios
 
-Tus formularios 1, 2 y 3, listos para imprimir o mandar, en **PDF** o como **imagen**. Salen solo con tus clases: nunca aparecen las de otro facilitador.
+Tus formularios 1, 2 y 3, listos para imprimir o mandar, en **PDF** o como **imagen**, y el **Acuerdo de cooperación** con tus instituciones, en **PDF**. Salen solo con tus clases: nunca aparecen las de otro facilitador.
 
 - **Form. 1 · Postulación anual**: tus clases en una institución, con grados, manuales, horarios y docentes, y los datos y autoridades de la institución.
 - **Form. 2 · Reporte diario**: tus clases en una institución con las intervenciones de un mes o de una etapa: el índice, la fecha, 1 si la desarrollaste o 0 con el motivo, y el total.
 - **Form. 3 · Agenda semanal**: tu semana de mañana y de tarde en todas tus instituciones, con tus horarios bloqueados en rojo.
+- **Acuerdo · Cooperación**: el acuerdo específico de cooperación entre la Editorial Ethos y una de tus instituciones, ya completo con el nombre de la institución, su director/a (nombre, cédula y teléfono) y el año. Solo aparecen las instituciones donde tenés clases.
 
 1. Abrí **Menú** y tocá **Formularios**.
-2. Elegí el formulario arriba: **Form. 1**, **Form. 2** o **Form. 3**.
-3. Elegí el **año lectivo** y, en los formularios 1 y 2, la **institución**. En el Form. 2 elegí también el **mes** o la **etapa**.
+2. Elegí el formulario arriba: **Form. 1**, **Form. 2**, **Form. 3** o **Acuerdo**.
+3. Elegí el **año lectivo** y, en los formularios 1 y 2 y en el Acuerdo, la **institución**. En el Form. 2 elegí también el **mes** o la **etapa**.
 4. Mirá la **vista previa**. En el celular, pellizcala para ampliarla; en la computadora, tocá **Ampliar** y recorrela de costado.
 5. Tocá **PDF** o **Imagen**. En el celular se abre el menú para compartir: abrilo con un visor, guardalo o mandalo por WhatsApp. En la computadora se abre en una pestaña nueva.
+6. En el **Acuerdo**, tocá **Ver PDF** para abrirlo, o **Descargar** para guardarlo. En el celular, al descargar elegís la carpeta donde se guarda.
 
-> Las recuperaciones y el título de las autoridades salen en blanco, para que los completes a mano. Si una clase tuvo más de 4 intervenciones en el período, salen las primeras 4 y la pantalla te avisa.
+> Las recuperaciones y el título de las autoridades salen en blanco, para que los completes a mano. En el Acuerdo, la fecha del Convenio Marco sale en blanco, igual que en el modelo; si la institución no tiene cargado su director/a, o le falta la cédula o el teléfono, eso también sale en blanco y la pantalla te avisa. Si una clase tuvo más de 4 intervenciones en el período, salen las primeras 4 y la pantalla te avisa.
 
 ## Mis facturas
 

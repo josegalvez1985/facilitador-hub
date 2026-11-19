@@ -16,7 +16,7 @@ Está hecha con **React Native + Expo**. Una sola base de código funciona en **
 | Intervenciones realizadas (páginas 4, 5 y 6 de APEX) | Conectada: instituciones, clases con sus días e historial, con contadores: requiere publicar [sql/intervenciones_realizadas_app_ethos.sql](sql/intervenciones_realizadas_app_ethos.sql) |
 | Historial de intervenciones (páginas 7 y 8 de APEX) | Conectado: búsqueda, filtros por mes y fecha, y edición: requiere publicar [sql/historial_app_ethos.sql](sql/historial_app_ethos.sql) |
 | Mis materiales | Conectada: manuales e índices **desarrollados y pendientes**: requiere publicar [sql/materiales_app_ethos.sql](sql/materiales_app_ethos.sql) |
-| Formularios (Form. 1, 2 y 3) | Conectada: PDF e imagen con **solo las clases del facilitador**: requiere publicar [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
+| Formularios (Form. 1, 2 y 3 y Acuerdo de cooperación) | Conectada: PDF e imagen con **solo las clases del facilitador**; el Acuerdo, solo en PDF (ver y descargar) y solo de sus instituciones: requiere publicar [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
 | Mis facturas | Conectada: el facilitador **saca o elige la foto** de su factura (va a Cloudinary), carga **número, timbrado, fecha** (en un calendario) y **mes**, y ve, corrige o borra las que están por revisar: requiere publicar [sql/facturas_app_ethos.sql](sql/facturas_app_ethos.sql) y un **APK nuevo** (permiso de cámara) |
 | Perfil | Datos del usuario logueado y **foto de perfil**; la foto, el modo claro/oscuro y el tema de color se guardan en el dispositivo |
 | Notificaciones (campana) | Conectada: **próxima clase** según la hora actual, con institución y próximo índice (sale de `mi-agenda`) |
@@ -144,7 +144,7 @@ Los registros de un facilitador **nunca se mezclan** con los de otro:
 | — · Inicio (KPIs y actividad) | `/` | `GET mi-agenda`, `GET mis-intervenciones/resumen`, `GET mis-intervenciones/recientes` | agenda + intervenciones |
 | 2 · Intervención | `/marcar` (botón **Marcar** y menú **Registrar intervención**) | `GET mis-intervenciones/inicio · horarios · clase · indices`, `POST mis-intervenciones` | [sql/intervenciones_app_ethos.sql](sql/intervenciones_app_ethos.sql) |
 | 4 · Intervenciones, 5 · Días, 6 · Manuales | `/intervenciones` (menú **Intervenciones realizadas**) | `GET intervenciones-realizadas/instituciones · clases · historial` | [sql/intervenciones_realizadas_app_ethos.sql](sql/intervenciones_realizadas_app_ethos.sql) |
-| — · Formularios 1, 2 y 3 (del sitio editorial-ethos-app) | `/formularios` (menú **Formularios**) | `GET mis-formularios/postulaciones · institucion · intervenciones · bloqueos` | [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
+| — · Formularios 1, 2 y 3 (del sitio editorial-ethos-app) y Acuerdo de cooperación (modelo "7 MODELO ACUERDO IE") | `/formularios` (menú **Formularios**) | `GET mis-formularios/postulaciones · institucion · intervenciones · bloqueos` | [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
 | — · Mis facturas (con "Totales por Facilitador" del sitio editorial-ethos-app) | `/facturas` (menú **Mis facturas**) | `GET` / `POST mis-facturas`, `PUT` / `DELETE mis-facturas/:id`, `POST mis-facturas/firma-foto` | [sql/facturas_app_ethos.sql](sql/facturas_app_ethos.sql) |
 | 7 · Historial de Intervenciones, 8 · Observación | `/historial` (menú **Historial de intervenciones**) y **Editar** en Intervenciones realizadas | `GET historial-intervenciones`, `GET` / `PUT historial-intervenciones/:id` | [sql/historial_app_ethos.sql](sql/historial_app_ethos.sql) |
 
@@ -165,6 +165,16 @@ Los tres formularios del sitio **editorial-ethos-app** (ver `GUIA_FORMULARIOS.md
 - **APK**: el archivo se guarda en la caché y se abre el menú de compartir (`expo-sharing`). **Web/PWA**: se abre en una pestaña nueva, o se descarga si el navegador la bloquea.
 - Los textos fijos (declaración, nota, contacto, misión, coordinación nacional) están en `form1.ts` y `form2.ts`, igual que en el sitio. Los colores de los manuales salen de `COLOR_MANUAL`.
 - `expo-sharing` y `react-native-webview` son módulos nativos: hace falta un **APK nuevo**.
+
+### Acuerdo de cooperación
+
+La pestaña **Acuerdo** de Formularios arma el "Acuerdo específico de cooperación" entre la Editorial Ethos y una institución, igual al modelo `7 MODELO ACUERDO IE PDF.pdf` (A4 vertical, Times, dos hojas), en `src/facilitadores/formularios/acuerdo.ts`.
+
+- **Solo PDF**: **Ver PDF** (web: pestaña nueva; APK: menú para elegir un visor) y **Descargar** (web: descarga del navegador; APK: el facilitador elige la carpeta con `Directory.pickDirectoryAsync` de `expo-file-system`). La vista previa es el mismo dibujo con las hojas una debajo de la otra.
+- **Datos**: los de `GET mis-formularios/institucion` (no hace falta otro endpoint): el nombre de la institución y la primera autoridad del período con "director" en el cargo (nombre, CI y teléfono). Lo que falta sale como línea en blanco y la pantalla lo avisa. El año es el año lectivo elegido (artículos 1, 2, 16 y 17).
+- **Solo sus instituciones**: la lista sale de las postulaciones activas del facilitador y el servidor responde 404 por cualquier otra institución.
+- **Fijo, como en el modelo**: el texto de las cláusulas, Santiago Monti (CI 685944), Cecilia Rafael (0983-196085), "ASUNCIÓN, marzo de {año}" y la fecha del Convenio Marco con el MEC, que queda en blanco.
+- **Imágenes**: `assets/images/logo-jv.jpg` (logo de Juventud con Valores) y `assets/images/firma-acuerdo.jpg` (firma "P/Autorización Cecilia Rafael"), sacadas del PDF del modelo.
 
 ### Mis facturas
 

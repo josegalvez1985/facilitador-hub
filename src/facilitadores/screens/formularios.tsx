@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { FileText, ImageDown, RefreshCw, TriangleAlert, UserRound, ZoomIn, ZoomOut } from 'lucide-react-native';
+import { Download, Eye, FileText, ImageDown, RefreshCw, TriangleAlert, UserRound, ZoomIn, ZoomOut } from 'lucide-react-native';
 
 import { useSession } from '../auth/session';
 import { hoy, nombreMes } from '../fechas';
+import { documentoAcuerdo, faltantesAcuerdo } from '../formularios/acuerdo';
 import { cargarBloqueo, cargarInstitucion, cargarIntervenciones, cargarMisPostulaciones, FALTA_PUBLICAR, faltaPublicar, type MisPostulaciones } from '../formularios/datos';
 import { documentoForm1 } from '../formularios/form1';
 import { armarClases, documentoForm2, textoEtapa } from '../formularios/form2';
@@ -11,18 +12,20 @@ import { armarAgenda, documentoForm3 } from '../formularios/form3';
 import { HojaNativa, type HojaNativaRef } from '../formularios/hoja-nativa';
 import { cargarJsPdf, type Lamina } from '../formularios/pintor';
 import type { Documento } from '../formularios/planilla';
-import { cargarLogo, sacarImagen, sacarPdf } from '../formularios/salida';
+import { Cancelado, cargarImagenesAcuerdo, cargarLogo, descargarPdf, sacarImagen, sacarPdf } from '../formularios/salida';
 import { LaminaSvg } from '../formularios/vista';
 import { makeStyles, useTheme } from '../theme-provider';
 import { useToast } from '../toast';
 import { Button, Card, PageTitle, Text } from '../ui';
 
-type NroForm = 1 | 2 | 3;
+/** 4 = el Acuerdo de cooperación (solo PDF). */
+type NroForm = 1 | 2 | 3 | 4;
 
 const FORMS: { n: NroForm; corto: string; titulo: string; detalle: string }[] = [
   { n: 1, corto: 'Form. 1', titulo: 'Postulación anual', detalle: 'Tus clases en una institución: grados, manuales, horarios y docentes.' },
   { n: 2, corto: 'Form. 2', titulo: 'Reporte diario', detalle: 'Tus clases en una institución con las intervenciones de un mes o una etapa.' },
   { n: 3, corto: 'Form. 3', titulo: 'Agenda semanal', detalle: 'Tu semana por turno, con tus horarios bloqueados en rojo.' },
+  { n: 4, corto: 'Acuerdo', titulo: 'Cooperación', detalle: 'El acuerdo de cooperación con una de tus instituciones, en PDF, con los datos de su director/a.' },
 ];
 
 type Periodo = { tipo: 'mes'; mes: number } | { tipo: 'etapa'; inicio: string; fin: string; n: number };
@@ -63,7 +66,7 @@ export function FormulariosScreen() {
   const [hoja, setHoja] = useState<{ clave: string } & Hoja>({ clave: '', tipo: 'cargando' });
   const [ancho, setAncho] = useState(0);
   const [grande, setGrande] = useState(false);
-  const [ocupado, setOcupado] = useState<'pdf' | 'imagen' | null>(null);
+  const [ocupado, setOcupado] = useState<'pdf' | 'imagen' | 'descargar' | null>(null);
   const hojaNativa = useRef<HojaNativaRef>(null);
   const esWeb = Platform.OS === 'web';
 
@@ -123,6 +126,12 @@ export function FormulariosScreen() {
         const f = await cargarInstitucion(instElegida, anio);
         return listo(documentoForm1(f), []);
       }
+      if (form === 4) {
+        // Solo instituciones donde tiene clases: el servidor responde 404 por cualquier otra.
+        const [f, img] = await Promise.all([cargarInstitucion(instElegida, anio), cargarImagenesAcuerdo()]);
+        const x = { institucion: f, anio };
+        return listo(documentoAcuerdo(x, img), faltantesAcuerdo(x));
+      }
       const [f, intervenciones, logo] = await Promise.all([cargarInstitucion(instElegida, anio), cargarIntervenciones(instElegida, desde, hasta), cargarLogo()]);
       const clases = armarClases(f.detalle, intervenciones, desde, hasta);
       const sobran = clases.filter((c) => c.sobran > 0);
@@ -149,17 +158,26 @@ export function FormulariosScreen() {
   };
 
   // En la web la pestaña tiene que abrirse dentro del toque: sacarPdf/sacarImagen van sin await previo.
-  const sacar = (que: 'pdf' | 'imagen') => {
+  const sacar = (que: 'pdf' | 'imagen' | 'descargar') => {
     if (h.tipo !== 'listo' || ocupado) return;
     setOcupado(que);
     const hoja = hojaNativa.current;
-    (que === 'pdf' ? sacarPdf(h.doc) : sacarImagen(h.doc, h.lamina, hoja ? () => hoja.rasterizar() : undefined))
-      .catch((e: unknown) => toast.error(que === 'pdf' ? 'No se pudo generar el PDF' : 'No se pudo generar la imagen', { description: e instanceof Error ? e.message : undefined }))
+    const trabajo = que === 'pdf' ? sacarPdf(h.doc) : que === 'descargar' ? descargarPdf(h.doc) : sacarImagen(h.doc, h.lamina, hoja ? () => hoja.rasterizar() : undefined);
+    trabajo
+      .then(() => {
+        if (que === 'descargar') toast.success('PDF descargado', { description: `${h.doc.archivo}.pdf` });
+      })
+      .catch((e: unknown) => {
+        if (e instanceof Cancelado) return;
+        toast.error(que === 'imagen' ? 'No se pudo generar la imagen' : que === 'descargar' ? 'No se pudo descargar el PDF' : 'No se pudo generar el PDF', {
+          description: e instanceof Error ? e.message : undefined,
+        });
+      })
       .finally(() => setOcupado(null));
   };
 
   const encabezado = (
-    <PageTitle title="Formularios" subtitle="Tus Form. 1, 2 y 3 en PDF o imagen, solo con tus clases.">
+    <PageTitle title="Formularios" subtitle="Tus Form. 1, 2 y 3 y el Acuerdo de cooperación, solo con tus clases.">
       <Button size="icon" variant="outline" icon={RefreshCw} accessibilityLabel="Actualizar formularios" onPress={recargar} disabled={facilitador.estado === 'cargando'} />
     </PageTitle>
   );
@@ -319,13 +337,28 @@ export function FormulariosScreen() {
               </View>
             ))}
 
-          <View style={s.acciones}>
-            <Button icon={FileText} label={ocupado === 'pdf' ? 'Generando…' : 'PDF'} onPress={() => sacar('pdf')} disabled={h.tipo !== 'listo' || ocupado !== null} style={{ flex: 1 }} />
-            <Button variant="outline" icon={ImageDown} label={ocupado === 'imagen' ? 'Generando…' : 'Imagen'} onPress={() => sacar('imagen')} disabled={h.tipo !== 'listo' || ocupado !== null} style={{ flex: 1 }} />
-          </View>
-          <Text size={11} color={colors.mutedForeground} style={{ textAlign: 'center', lineHeight: 16 }}>
-            {esWeb ? 'Se abre en una pestaña nueva (o se descarga).' : 'Se abre el menú para compartir: elegí un visor, guardalo o mandalo.'}
-          </Text>
+          {form === 4 ? (
+            <>
+              {/* El Acuerdo sale solo en PDF: verlo o descargarlo. */}
+              <View style={s.acciones}>
+                <Button icon={Eye} label={ocupado === 'pdf' ? 'Generando…' : 'Ver PDF'} onPress={() => sacar('pdf')} disabled={h.tipo !== 'listo' || ocupado !== null} style={{ flex: 1 }} />
+                <Button variant="outline" icon={Download} label={ocupado === 'descargar' ? 'Generando…' : 'Descargar'} onPress={() => sacar('descargar')} disabled={h.tipo !== 'listo' || ocupado !== null} style={{ flex: 1 }} />
+              </View>
+              <Text size={11} color={colors.mutedForeground} style={{ textAlign: 'center', lineHeight: 16 }}>
+                {esWeb ? 'Ver PDF lo abre en una pestaña nueva; Descargar lo guarda en tu equipo.' : 'Ver PDF abre el menú para elegir un visor; Descargar te deja elegir la carpeta donde guardarlo.'}
+              </Text>
+            </>
+          ) : (
+            <>
+              <View style={s.acciones}>
+                <Button icon={FileText} label={ocupado === 'pdf' ? 'Generando…' : 'PDF'} onPress={() => sacar('pdf')} disabled={h.tipo !== 'listo' || ocupado !== null} style={{ flex: 1 }} />
+                <Button variant="outline" icon={ImageDown} label={ocupado === 'imagen' ? 'Generando…' : 'Imagen'} onPress={() => sacar('imagen')} disabled={h.tipo !== 'listo' || ocupado !== null} style={{ flex: 1 }} />
+              </View>
+              <Text size={11} color={colors.mutedForeground} style={{ textAlign: 'center', lineHeight: 16 }}>
+                {esWeb ? 'Se abre en una pestaña nueva (o se descarga).' : 'Se abre el menú para compartir: elegí un visor, guardalo o mandalo.'}
+              </Text>
+            </>
+          )}
         </Card>
       )}
     </>

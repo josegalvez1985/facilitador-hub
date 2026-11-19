@@ -1,4 +1,4 @@
-// Las salidas de los formularios: el PDF y la imagen PNG.
+// Las salidas de los formularios: el PDF y la imagen PNG (el Acuerdo, solo PDF: ver y descargar).
 //
 // - APK: se guardan en la caché de la app y se abre el menú de compartir del sistema (abrir con
 //   un visor de PDF, guardar, mandar por WhatsApp…). La imagen la dibuja el WebView de la vista
@@ -9,7 +9,7 @@
 
 import { Platform } from 'react-native';
 import { Asset } from 'expo-asset';
-import { File, Paths } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
 import { cargarJsPdf, type Lamina, type Logo } from './pintor';
@@ -28,38 +28,49 @@ export function pixelesImagen(l: Lamina) {
 /** Un respiro antes del trabajo pesado, para que la pantalla alcance a mostrar "Generando…". */
 const respiro = () => new Promise((ok) => setTimeout(ok, 50));
 
-/* ---- El logo (el de public/logo.png, el mismo del sitio) ------------------------------------- */
+/* ---- Las imágenes de los formularios (JPEG) -------------------------------------------------- */
+
+/** Una imagen JPEG de assets/ como data URL. null si no se pudo leer: el formulario sale igual, sin ella. */
+async function leerJpeg(modulo: number): Promise<Logo | null> {
+  try {
+    const a = Asset.fromModule(modulo);
+    await a.downloadAsync();
+    let url: string;
+    if (Platform.OS === 'web') {
+      const blob = await (await fetch(a.uri)).blob();
+      url = await new Promise<string>((ok, mal) => {
+        const fr = new FileReader();
+        fr.onload = () => ok(String(fr.result));
+        fr.onerror = () => mal(fr.error);
+        fr.readAsDataURL(blob);
+      });
+    } else {
+      url = `data:image/jpeg;base64,${await new File(a.localUri ?? a.uri).base64()}`;
+    }
+    return { url, ancho: a.width ?? 200, alto: a.height ?? 200 };
+  } catch {
+    return null;
+  }
+}
 
 let logo: Promise<Logo | null> | null = null;
+let logoJv: Promise<Logo | null> | null = null;
+let firmaAcuerdo: Promise<Logo | null> | null = null;
 
 /**
- * El logo como data URL. null si no se pudo leer: el formulario sale igual, sin él. Es una copia
- * JPEG de 200 px de public/logo.png: jsPDF la inserta sin decodificarla (con el PNG de 512 px el
- * PDF del Form. 2 tardaba segundos en el APK y pesaba 1 MB).
+ * El logo de los formularios. Es una copia JPEG de 200 px de public/logo.png: jsPDF la inserta sin
+ * decodificarla (con el PNG de 512 px el PDF del Form. 2 tardaba segundos en el APK y pesaba 1 MB).
  */
 export function cargarLogo(): Promise<Logo | null> {
-  logo ??= (async () => {
-    try {
-      const a = Asset.fromModule(require('../../../assets/images/logo-formularios.jpg'));
-      await a.downloadAsync();
-      let url: string;
-      if (Platform.OS === 'web') {
-        const blob = await (await fetch(a.uri)).blob();
-        url = await new Promise<string>((ok, mal) => {
-          const fr = new FileReader();
-          fr.onload = () => ok(String(fr.result));
-          fr.onerror = () => mal(fr.error);
-          fr.readAsDataURL(blob);
-        });
-      } else {
-        url = `data:image/jpeg;base64,${await new File(a.localUri ?? a.uri).base64()}`;
-      }
-      return { url, ancho: a.width ?? 200, alto: a.height ?? 200 };
-    } catch {
-      return null;
-    }
-  })();
+  logo ??= leerJpeg(require('../../../assets/images/logo-formularios.jpg'));
   return logo;
+}
+
+/** El logo de Juventud con Valores y la firma de la Editorial, sacados del modelo del Acuerdo. */
+export function cargarImagenesAcuerdo(): Promise<{ logo: Logo | null; firma: Logo | null }> {
+  logoJv ??= leerJpeg(require('../../../assets/images/logo-jv.jpg'));
+  firmaAcuerdo ??= leerJpeg(require('../../../assets/images/firma-acuerdo.jpg'));
+  return Promise.all([logoJv, firmaAcuerdo]).then(([l, f]) => ({ logo: l, firma: f }));
 }
 
 /* ---- Web: pestaña nueva o descarga ------------------------------------------------------------ */
@@ -115,6 +126,17 @@ function imagenWeb(l: Lamina): Promise<Blob> {
   });
 }
 
+function descargarWeb(blob: Blob, archivo: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = archivo;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 /* ---- APK: archivo en la caché y menú de compartir --------------------------------------------- */
 
 async function compartir(base64: string, nombre: string, mimeType: string, UTI: string) {
@@ -124,6 +146,22 @@ async function compartir(base64: string, nombre: string, mimeType: string, UTI: 
   await f.write(base64, { encoding: 'base64' });
   if (!(await Sharing.isAvailableAsync())) throw new Error('Este dispositivo no permite compartir archivos');
   await Sharing.shareAsync(f.uri, { mimeType, UTI, dialogTitle: nombre });
+}
+
+/** El usuario cerró el selector de carpeta sin elegir una. */
+export class Cancelado extends Error {}
+
+/** Guarda el archivo en la carpeta que elija el usuario (Android: selector del sistema). */
+async function guardarEnCarpeta(base64: string, nombre: string, mimeType: string) {
+  let carpeta: Directory;
+  try {
+    carpeta = await Directory.pickDirectoryAsync();
+  } catch (e) {
+    if (e instanceof Error && /cancel/i.test(e.message)) throw new Cancelado('Cancelado');
+    throw e;
+  }
+  const f = carpeta.createFile(nombre, mimeType);
+  await f.write(base64, { encoding: 'base64' });
 }
 
 /* ---- Lo que llama la pantalla ----------------------------------------------------------------- */
@@ -138,6 +176,22 @@ export function sacarPdf(d: Documento): Promise<void> {
     const doc = d.pdf(m);
     const uri = doc.output('datauristring');
     await compartir(uri.slice(uri.indexOf(',') + 1), nombre, 'application/pdf', 'com.adobe.pdf');
+  })();
+}
+
+/**
+ * Descarga el PDF: en la web, al dispositivo (carpeta de descargas del navegador); en el APK, en la
+ * carpeta que elija el usuario. Lanza `Cancelado` si cierra el selector sin elegir.
+ */
+export function descargarPdf(d: Documento): Promise<void> {
+  const nombre = `${d.archivo}.pdf`;
+  return (async () => {
+    const m = await cargarJsPdf();
+    await respiro();
+    const doc = d.pdf(m);
+    if (Platform.OS === 'web') return descargarWeb(doc.output('blob'), nombre);
+    const uri = doc.output('datauristring');
+    await guardarEnCarpeta(uri.slice(uri.indexOf(',') + 1), nombre, 'application/pdf');
   })();
 }
 
