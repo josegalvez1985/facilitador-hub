@@ -20,6 +20,7 @@ Esa es la URL de `EXPO_PUBLIC_API_URL` en `.env`.
 | [intervenciones_app_ethos.sql](intervenciones_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_INTERVENCIONES_APP_ETHOS` (Marcar, página 2) y publica `mis-intervenciones/*`. No pisa rutas existentes: si alguna ya existe y no es de este paquete, se detiene sin tocar nada. |
 | [formularios_app_ethos.sql](formularios_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_FORMULARIOS_APP_ETHOS` (Form. 1, 2 y 3) y publica `mis-formularios/*`. Solo lectura. No pisa rutas existentes. |
 | [facturas_app_ethos.sql](facturas_app_ethos.sql) | **Para correr una vez en APEX**, después de `cloudinary.sql` y `facturas_facilitadores.sql` del sitio. Crea `PKG_FACTURAS_APP_ETHOS` (Mis facturas) y publica `mis-facturas/*`: el facilitador sube la foto de su factura física. Escribe en `FACTURAS_FACILITADORES`, la misma tabla del sitio. No pisa rutas existentes. |
+| [postulacion_app_ethos.sql](postulacion_app_ethos.sql) | **Para correr una vez en APEX**, con `POSTULANTES_FACILITADORES` ya creada con `ID_FACILITADOR` y su FK (no toca la tabla, solo lo verifica). Crea `PKG_POSTULACION_APP_ETHOS` (Mi postulación) y publica `mi-postulacion/*`. No pisa rutas existentes. |
 
 Nada de esto se ejecuta desde la app.
 
@@ -209,6 +210,23 @@ sitio (la tabla, `FOTO_URL` y `PKG_CLOUDINARY_ETHOS`).
 `ORDS.DEFINE_TEMPLATE` sobre una ruta que ya existe la **reemplaza y borra sus handlers**. Con dos métodos en la misma ruta (`mis-facturas` GET y POST, `mis-facturas/:id` PUT y DELETE), publicar el segundo borraba el primero: el 04/11/2026 quedaron 3 de 5. Sin el GET, el navegador mostraba un error de CORS ("authorization is not allowed").
 
 Los scripts ahora crean la ruta **solo si no existe** (miran `USER_ORDS_TEMPLATES`). `historial_app_ethos.sql` tenía el mismo problema y quedó corregido igual.
+
+## Mi postulación (`PKG_POSTULACION_APP_ETHOS`)
+
+El facilitador se postula para el año lectivo en `POSTULANTES_FACILITADORES` (formulario JV26). El `ID_FACILITADOR` lo pone el servidor a partir del token; en las filas del formulario viejo y de postulantes nuevos queda vacío.
+
+| Método | Ruta | Respuesta |
+|---|---|---|
+| GET | `mi-postulacion` | `{ success, es_facilitador, anio, abierta, facilitador: { nombre, telefono, fecha_nacimiento }, postulacion?, anterior? }`. `postulacion` es la del año abierto; `anterior`, la más reciente de otro año (para precargar). Cada una trae las columnas de la tabla en minúscula, `dias_disponibles` como arreglo, `departamento`, `ciudad`, `anio` y `fecha_registro` (`YYYY-MM-DDTHH:MI`). |
+| POST | `mi-postulacion` | El JSON con las mismas claves → 200 `{ id, nueva, message }` · 400 `{ message, campo }` · 403 no es facilitador · 409 no hay año abierto. Se lee entero de `:body_text` con `APEX_JSON` (son ~60 campos). |
+| GET | `mi-postulacion/lugares?id_pais=` | `{ id_pais, departamentos: [ { id, nombre, ciudades: [ { id, nombre } ] } ] }`. Vacío = país 1 (Paraguay). |
+
+- **Año:** el lectivo actual (`FN_ANIO_LECTIVO_ACTUAL()`) buscado en `ANIOS_LECTIVOS`. Si no está, `abierta: false`. Se cambia en un solo lugar (`anio_abierto`).
+- **Una por facilitador y año**, controlada en el paquete con la fila de `FACILITADORES` bloqueada: si ya existe, el POST la **corrige**. `FECHA_REGISTRO` queda la del primer envío, en hora de Paraguay (`SYSDATE - 3/24`; el `DEFAULT SYSTIMESTAMP` de la tabla es UTC).
+- **"No de acuerdo"** no se envía: el POST solo acepta `DE_ACUERDO`.
+- `EDAD` la calcula el servidor. `DIAS_DISPONIBLES` se guarda como `LUNES,MARTES,...` (sin tildes, en el orden de la semana). `UBICACION_DOMICILIO` es `latitud, longitud` del GPS o el enlace de Google Maps que pegue el facilitador.
+- Valida lo mismo que los `CHECK` (cada nivel de estudio con sus códigos: `CONCLUIDA` en licenciatura, `INCONCLUSA` en licenciatura y posgrado) y lo condicional (título si está concluido o cursando, curso `2/4` si está cursando, empresa y cargo si trabaja, vehículo si tiene movilidad).
+- **Salida esperada del script:** `[OK] PKG_POSTULACION_APP_ETHOS compilado`, `Handlers de mi-postulacion publicados: 3 de 3` y `[OK] Postulacion abierta para <año>`.
 
 ## CORS
 

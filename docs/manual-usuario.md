@@ -157,6 +157,24 @@ Acá enviás la factura de cada mes: le sacás una foto y completás sus datos. 
 
 > Va una sola factura por mes, y no podés cargar un mes que todavía no empezó ni una fecha posterior a hoy. La foto es obligatoria.
 
+## Mi postulación
+
+Acá te postulás para seguir como facilitador en el año lectivo y actualizás tus datos. Es una por año.
+
+1. Abrí **Menú** y tocá **Mi postulación**.
+2. Tocá **Empezar mi postulación**. Si ya te postulaste otro año, tocá **Usar mis datos de** ese año: el formulario arranca completo y solo cambiás lo que haya cambiado.
+3. Completá los pasos: **El proceso**, **Datos personales**, **Domicilio**, **Estudios**, **Trabajo y recursos**, **Disponibilidad**, **Iglesia** y **Cobro**. Tocá **Siguiente** para pasar al próximo. Si falta algo, el campo se marca en rojo.
+4. En **Revisar y enviar** mirá el resumen. Con **Editar** volvés a cualquier sección.
+5. Tocá **Enviar postulación**.
+
+- **Ubicación de tu casa**: si estás en tu casa, tocá **Usar mi ubicación**. Si no, abrí Google Maps, buscá tu casa, tocá **Compartir** y pegá el enlace.
+- **Cuenta para el cobro**: si la cuenta está a tu nombre, **La cuenta es mía** completa el titular con tus datos.
+- Podés volver a un paso que ya pasaste tocándolo en la barra de arriba.
+- Si salís sin enviarla, lo que cargaste queda mientras la app esté abierta: al volver tocá **Seguir donde dejaste**. Si cerrás la app, se pierde.
+- Una vez enviada, ves el resumen y la podés **Corregir** cuando quieras.
+
+> Para postularte tenés que estar de acuerdo con el proceso. Si elegís **No estoy de acuerdo**, no se envía nada.
+
 ## Mi perfil
 
 - **Información personal**: tu nombre, usuario y correo. Para corregirlos, pedíselo a tu coordinador.
@@ -196,6 +214,14 @@ Revisá que la app tenga permiso de **ubicación** y que estén completos los ca
 ### No puedo corregir ni borrar una factura
 
 Solo se pueden cambiar las facturas **por revisar**. Si ya dice **Revisada**, pedile la corrección a la coordinación.
+
+### Mi postulación dice "No hay una postulación abierta"
+
+La coordinación todavía no habilitó la postulación de este año. Cuando la habilite, la vas a ver en **Mi postulación**.
+
+### Cambió algún dato después de enviar la postulación
+
+Entrá a **Mi postulación**, tocá **Corregir mi postulación** (o **Editar** en la sección que cambió) y volvé a enviarla. Se actualiza la misma postulación: no se crea otra.
 
 ### Mis datos personales están mal
 

@@ -18,6 +18,7 @@ Está hecha con **React Native + Expo**. Una sola base de código funciona en **
 | Mis materiales | Conectada: manuales e índices **desarrollados y pendientes**: requiere publicar [sql/materiales_app_ethos.sql](sql/materiales_app_ethos.sql) |
 | Formularios (Form. 1, 2 y 3 y Acuerdo de cooperación) | Conectada: PDF e imagen con **solo las clases del facilitador**; el Acuerdo, solo en PDF (ver y descargar) y solo de sus instituciones: requiere publicar [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
 | Mis facturas | Conectada: el facilitador **saca o elige la foto** de su factura (va a Cloudinary), carga **número, timbrado, fecha** (en un calendario) y **mes**, y ve, corrige o borra las que están por revisar: requiere publicar [sql/facturas_app_ethos.sql](sql/facturas_app_ethos.sql) y un **APK nuevo** (permiso de cámara) |
+| Mi postulación | Conectada: formulario por pasos para postularse al año lectivo (`POSTULANTES_FACILITADORES`), con los datos de otro año para precargar, resumen y corrección: requiere publicar [sql/postulacion_app_ethos.sql](sql/postulacion_app_ethos.sql) |
 | Perfil | Datos del usuario logueado y **foto de perfil**; la foto, el modo claro/oscuro y el tema de color se guardan en el dispositivo |
 | Notificaciones (campana) | Conectada: **próxima clase** según la hora actual, con institución y próximo índice (sale de `mi-agenda`) |
 
@@ -74,6 +75,7 @@ src/
     (app)/evaluaciones.tsx   /evaluaciones  (página 11 de APEX)
     (app)/formularios.tsx    /formularios   (Form. 1, 2 y 3 en PDF e imagen)
     (app)/facturas.tsx       /facturas      (Mis facturas: foto y datos de la factura del mes)
+    (app)/postulacion.tsx    /postulacion   (Mi postulación al año lectivo)
     (app)/marcar.tsx         /marcar        (página 2 de APEX: Registrar intervención)
     (app)/perfil.tsx         /perfil
   facilitadores/
@@ -98,6 +100,8 @@ src/
     formularios/             Form. 1, 2 y 3: datos (GET mis-formularios/*), dibujo, PDF (jsPDF) e imagen (SVG)
     facturas.ts              Mis facturas: mis-facturas/*, la foto (cámara o galería), la subida a Cloudinary y el formato del número
     editar-factura.tsx       Formulario de alta / corrección de una factura
+    postulacion.ts           Mi postulación: mi-postulacion/*, opciones, validación por paso y borrador en memoria
+    postulacion-form.tsx     Formulario por pasos de la postulación y su resumen
     selector-fecha.tsx       Campo de fecha que se elige en un calendario (sin módulo nativo)
     intervenciones.ts        Marcar: listas en cascada, validaciones y guardado (mis-intervenciones)
     ubicacion.ts             GPS del dispositivo (expo-location)
@@ -146,6 +150,7 @@ Los registros de un facilitador **nunca se mezclan** con los de otro:
 | 4 · Intervenciones, 5 · Días, 6 · Manuales | `/intervenciones` (menú **Intervenciones realizadas**) | `GET intervenciones-realizadas/instituciones · clases · historial` | [sql/intervenciones_realizadas_app_ethos.sql](sql/intervenciones_realizadas_app_ethos.sql) |
 | — · Formularios 1, 2 y 3 (del sitio editorial-ethos-app) y Acuerdo de cooperación (modelo "7 MODELO ACUERDO IE") | `/formularios` (menú **Formularios**) | `GET mis-formularios/postulaciones · institucion · intervenciones · bloqueos` | [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
 | — · Mis facturas (con "Totales por Facilitador" del sitio editorial-ethos-app) | `/facturas` (menú **Mis facturas**) | `GET` / `POST mis-facturas`, `PUT` / `DELETE mis-facturas/:id`, `POST mis-facturas/firma-foto` | [sql/facturas_app_ethos.sql](sql/facturas_app_ethos.sql) |
+| — · Mi postulación (tabla `POSTULANTES_FACILITADORES`, formulario JV26) | `/postulacion` (menú **Mi postulación**) | `GET` / `POST mi-postulacion`, `GET mi-postulacion/lugares` | [sql/postulacion_app_ethos.sql](sql/postulacion_app_ethos.sql) |
 | 7 · Historial de Intervenciones, 8 · Observación | `/historial` (menú **Historial de intervenciones**) y **Editar** en Intervenciones realizadas | `GET historial-intervenciones`, `GET` / `PUT historial-intervenciones/:id` | [sql/historial_app_ethos.sql](sql/historial_app_ethos.sql) |
 
 ### Formularios (Form. 1, 2 y 3)
@@ -196,6 +201,38 @@ El facilitador envía la **foto** y los **datos** de su factura de cada mes, y e
   - Para saber si está: `SELECT procedure_name FROM user_procedures WHERE object_name = 'PKG_CLOUDINARY_ETHOS'` tiene que listar **BORRAR**.
   - Correr el `cloudinary.sql` nuevo del sitio no pisa la configuración (clave, secreto, cloud y preset).
 - **Preset de Cloudinary (`fc`):** tiene que ser *Signed*. La app pide la carpeta `facturas-facilitadores`. Si en el preset figura otra carpeta (por ejemplo la de ejemplo, `samples/ecommerce`), conviene cambiarla.
+
+### Mi postulación
+
+El facilitador se postula para seguir en el **año lectivo actual** y actualiza sus datos. Es la tabla del formulario JV26 (`POSTULANTES_FACILITADORES`), con la columna `ID_FACILITADOR`. El servidor completa esa columna a partir del token, así que cada facilitador ve y carga **solo su** postulación. Los postulantes nuevos, que no vienen de la app, la tienen vacía.
+
+- **Reglas (23/11/2026):**
+  - Hay **una postulación por año**. Si ya existe, el envío la **corrige** en vez de crear otra.
+  - Se puede corregir **cuando quiera** mientras el año esté abierto.
+  - **"No estoy de acuerdo"** no envía nada.
+  - El país es siempre **1 (Paraguay)**.
+  - El año es `FN_ANIO_LECTIVO_ACTUAL()`. Si no está en `ANIOS_LECTIVOS`, la pantalla dice que no hay postulación abierta.
+- **Pantalla** (`screens/postulacion.tsx`): hay tres estados.
+  - **Sin enviar:** una tarjeta "Postulación \<año\> · Abierta" con la lista de pasos y tres formas de empezar:
+    - **Usar mis datos de \<año\>**, si hay una postulación de otro año.
+    - **Empezar de cero**, con el nombre, el teléfono y la fecha de nacimiento de `FACILITADORES`.
+    - **Seguir donde dejaste**, si hay algo cargado y sin enviar.
+  - **Enviada:** la fecha de envío, el **resumen** por secciones y **Corregir**. **Editar** abre el formulario directo en esa sección.
+  - **Cerrada:** "No hay una postulación abierta".
+- **Formulario** (`postulacion-form.tsx`): 8 pasos más **Revisar y enviar**, uno por pantalla.
+  - **Navegación:** una barra de progreso arriba, con un chip por paso. Se puede volver a cualquier paso ya visitado, y cada paso empieza desde arriba (`useSubirAlInicio` del shell).
+  - **Opciones:** van en **botones**, no en listas desplegables, y los campos condicionales aparecen solo cuando corresponden: el título si está concluido o cursando, el curso `2/4` si está cursando, empresa y cargo si trabaja, el vehículo si tiene movilidad, y "¿Cuál?" si el estado civil es Otro.
+  - **Fecha de nacimiento:** se escribe como `DD/MM/AAAA` y muestra la edad. El calendario de facturas va mes por mes y para un nacimiento no sirve.
+  - **Departamento y ciudad:** se eligen en una lista con buscador (`GET mi-postulacion/lugares`, que se pide una vez por sesión).
+  - **Ubicación de la casa:** **Usar mi ubicación** pone `latitud, longitud` del GPS (`expo-location`, que ya está en el APK). También se puede pegar el enlace de Google Maps, y **Ver en el mapa** lo abre.
+  - **Atajos:** **La cuenta es mía** copia el nombre y la cédula al titular, y **La factura la emito yo** copia el nombre al emisor.
+  - **Validación:** cada paso se valida al tocar **Siguiente**, con los valores de los `CHECK` de la tabla. Cada nivel de estudio usa sus propios códigos, por ejemplo `CONCLUIDA` e `INCONCLUSA` en licenciatura. Al enviar se revisan todos los pasos, y si el servidor rechaza un campo, la app lleva al paso donde está.
+- **Lo cargado sin enviar** queda **solo en memoria** (`postulacion.ts`), por usuario y año, mientras la app esté abierta. Nunca se guarda en el dispositivo, porque incluye los datos bancarios.
+- **Backend:** `GET` y `POST mi-postulacion` y `GET mi-postulacion/lugares` (ver [sql/README.md](sql/README.md)). El `POST` manda el JSON entero, que el paquete lee de `:body_text`. `EDAD` la calcula el servidor, y `FECHA_REGISTRO` queda en hora de Paraguay y es la del primer envío.
+- **Formatos que eligió la app:**
+  - `DIAS_DISPONIBLES` se guarda como `LUNES,MARTES,MIERCOLES` (sin tildes, en el orden de la semana).
+  - `UBICACION_DOMICILIO` se guarda como `latitud, longitud` o como el enlace de Google Maps.
+- **Pendiente:** el texto del paso **El proceso** es general. Hay que reemplazarlo por las etapas y los requisitos reales de la fundación.
 
 ### Historial de intervenciones (páginas 7 y 8)
 
@@ -307,7 +344,7 @@ Cómo se porta una página:
 
 - **Barra superior:** título de la sección y la campana de notificaciones (sin avatar; la foto está en Inicio, el menú y Perfil).
 - **Menos de 800 px de ancho** (celulares): barra superior, y barra inferior con **Inicio · Marcar · Menú · Perfil · Salir**.
-  - **Menú** abre un panel con **todas** las secciones (Inicio, Registrar intervención, Intervenciones realizadas, Historial de intervenciones, Mi agenda, Mis materiales, Evaluaciones, Formularios, Mis facturas, Mi perfil) y el Centro de ayuda. Las secciones nuevas aparecen ahí solas.
+  - **Menú** abre un panel con **todas** las secciones (Inicio, Registrar intervención, Intervenciones realizadas, Historial de intervenciones, Mi agenda, Mis materiales, Evaluaciones, Formularios, Mis facturas, Mi postulación, Mi perfil) y el Centro de ayuda. Las secciones nuevas aparecen ahí solas.
   - **Salir** pide confirmación antes de cerrar la sesión.
 - **800 px o más** (tablets, escritorio, web): menú lateral fijo, y en Inicio la columna de calendario y accesos rápidos.
 - En Perfil → **Apariencia**: modo claro / oscuro / automático y 6 temas de color. También ahí se carga la foto de perfil.
@@ -329,6 +366,10 @@ Cómo se porta una página:
 | Mis facturas: "Todavía no se pueden subir fotos" | Cloudinary no está configurado en Oracle (`PKG_CLOUDINARY_ETHOS.falta`) | Configurarlo como en `cloudinary.sql` del sitio |
 | Mis facturas (APK): **Sacar foto** no abre la cámara | APK anterior al permiso de cámara | Instalar un APK nuevo |
 | Mis facturas: al borrar, la foto queda en Cloudinary | El `PKG_CLOUDINARY_ETHOS` de Oracle no tiene `BORRAR` (el script lo avisa con `[WARN]`) | Borrarla a mano en Cloudinary, o correr el `cloudinary.sql` nuevo del sitio |
+| Mi postulación: "Falta publicar en el backend los endpoints de mi-postulacion" | No se corrió `sql/postulacion_app_ethos.sql` | Correrlo en APEX (deben quedar 3 de 3 handlers) |
+| Mi postulación: "No hay una postulación abierta" | El año lectivo actual (`FN_ANIO_LECTIVO_ACTUAL()`) no está en `ANIOS_LECTIVOS` | Cargar el año en `ANIOS_LECTIVOS`. El script lo avisa con `[WARN]` |
+| Mi postulación: **Usar mi ubicación** no hace nada o pide permiso | El navegador o el celular no dio permiso de ubicación | Habilitarlo, o pegar el enlace de Google Maps de la casa |
+| `Unmatched Route` en `/postulacion` (u otra sección nueva) | El servidor de desarrollo no tomó la ruta nueva | Recargar la página, o reiniciar con `npx expo start --clear` |
 | Inicio: un KPI dice "Falta publicar mis-intervenciones" | No se corrió (o no se volvió a correr) `sql/intervenciones_app_ethos.sql` | Correrlo en APEX |
 | Marcar: "Falta publicar en el backend los endpoints de mis-intervenciones" | No se corrió `sql/intervenciones_app_ethos.sql` | Correrlo en APEX |
 | Marcar: "Permití el acceso a la ubicación" | El navegador o el celular no dio permiso de ubicación | Habilitar la ubicación para la app y tocar **Reintentar** |

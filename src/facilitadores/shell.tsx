@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Modal as RNModal, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { usePathname, useRouter, type Href } from 'expo-router';
-import { Bell, BookOpen, CalendarDays, ChevronRight, CircleHelp, ClipboardCheck, FileText, History, LayoutGrid, ListChecks, LogOut, MapPin, Menu, Plus, Receipt, UserRound, X, type LucideIcon } from 'lucide-react-native';
+import { Bell, BookOpen, CalendarDays, ChevronRight, CircleHelp, ClipboardCheck, ClipboardPen, FileText, History, LayoutGrid, ListChecks, LogOut, MapPin, Menu, Plus, Receipt, UserRound, X, type LucideIcon } from 'lucide-react-native';
 
 import { useSession } from './auth/session';
 import { demoUser, iniciales } from './data';
@@ -26,6 +26,7 @@ export const nav: NavItem[] = [
   { href: '/evaluaciones', path: '/evaluaciones', label: 'Evaluaciones', short: 'Evaluaciones', icon: ClipboardCheck, title: 'Evaluaciones' },
   { href: '/formularios', path: '/formularios', label: 'Formularios', short: 'Formularios', icon: FileText, title: 'Formularios' },
   { href: '/facturas', path: '/facturas', label: 'Mis facturas', short: 'Facturas', icon: Receipt, title: 'Mis facturas' },
+  { href: '/postulacion', path: '/postulacion', label: 'Mi postulación', short: 'Postulación', icon: ClipboardPen, title: 'Mi postulación' },
   { href: '/perfil', path: '/perfil', label: 'Mi perfil', short: 'Perfil', icon: UserRound, title: 'Mi perfil' },
 ];
 
@@ -37,8 +38,14 @@ export function useLayout() {
   return { width, desktop: width >= breakpoints.desktop, wide: width >= breakpoints.wide };
 }
 
+/** Lleva el área con scroll de la sección al principio (p. ej. al pasar de paso en un formulario). */
+const SubirContext = createContext<() => void>(() => {});
+export const useSubirAlInicio = () => useContext(SubirContext);
+
 export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
+  const subir = useCallback(() => scroll.current?.scrollTo({ y: 0, animated: false }), []);
   const router = useRouter();
   const app = useApp();
   const { colors } = useTheme();
@@ -153,8 +160,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* La app dibuja de borde a borde: Android ya no achica la ventana con el teclado.
             Esto le resta su alto al área con scroll para que el campo enfocado quede visible. */}
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
-        <ScrollView key={path} style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={[s.workspace, desktop ? { padding: wide ? 38 : 24, paddingTop: wide ? 32 : 28 } : { padding: 20, paddingTop: 24 }]}>
-          {children}
+        <ScrollView ref={scroll} key={path} style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={[s.workspace, desktop ? { padding: wide ? 38 : 24, paddingTop: wide ? 32 : 28 } : { padding: 20, paddingTop: 24 }]}>
+          <SubirContext.Provider value={subir}>{children}</SubirContext.Provider>
           {desktop && (
             <View style={s.footer}>
               <Text size={10} color={colors.mutedForeground}>
