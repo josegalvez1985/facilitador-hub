@@ -22,6 +22,7 @@
 - Keep non-route code out of `src/app/`. Tests live in `__tests__/`.
 - Tests use a simulated backend. By default `fetchMock` answers `mi-facilitador` (facilitator 7). Use `responder(...)` for one-off responses, `entrar()` to log in, and `llamadaA('fragmento')` to assert on a request by URL rather than by call order. When the user asks for tests, register every new route in the `routes` map of `__tests__/app.test.tsx`.
 - Do not run `npm test` and do not write or update tests unless the user explicitly asks: the suite costs too many tokens. Before finishing a change run only `npm run typecheck` and ESLint on the changed files (`npx eslint <files>`), and say that tests were not run.
+- Claude Code team (24/11/2026): `CLAUDE.md` imports this file and adds the coordination rules; the subagents live in `.claude/agents/` and the project procedures (skills) in `.claude/skills/`. Several of them repeat rules from this file, so when a rule here changes (skill `registrar-decision`), update every agent and skill that mentions it in the same change. This file prevails over them when they disagree.
 
 ## Backend (Oracle APEX / ORDS)
 - The app uses the published ORDS module `ethos` (schema `WKSP_FUNDCARAC`, APEX workspace `FUNDCARAC`, same users as the previous system). Login comes from `PKG_AUTH_ETHOS` / `ETHOS_TOKENS`, and the business endpoints validate that same token.

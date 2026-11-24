@@ -115,10 +115,56 @@ src/
     data.ts / provider.tsx   Datos y estado de demostración (pantallas aún no conectadas) y la foto de perfil
     screens/                 Pantallas
 sql/                         Backend (Oracle APEX / ORDS): scripts y contrato → sql/README.md
+docs/                        Manual de uso (manual-usuario.md) y guías
 public/                      Plantilla web, manifest e íconos de la PWA
 assets/                      Íconos de la app e imágenes
 __tests__/                   Tests
+AGENTS.md                    Reglas del proyecto para los asistentes de código
+CLAUDE.md                    Importa AGENTS.md y agrega la coordinación del equipo de agentes de Claude Code
+.claude/
+  agents/                    Subagentes de Claude Code (uno por especialidad)
+  skills/                    Procedimientos del proyecto (portar una página APEX, endpoint ORDS, pantalla…)
 ```
+
+## Trabajar con Claude Code
+
+El repositorio trae un equipo de **agentes** y **skills** de Claude Code adaptados a este proyecto. Las reglas del proyecto están en [AGENTS.md](AGENTS.md); [CLAUDE.md](CLAUDE.md) lo importa y agrega cómo se coordina el equipo. Si hay conflicto, manda `AGENTS.md`.
+
+La sesión principal hace de coordinadora: decide qué agentes intervienen, les pasa el contexto e integra los resultados. Las tareas chicas las resuelve sola. También se puede pedir un agente por nombre ("usá el agente `code-reviewer`") o un skill con `/nombre` (por ejemplo `/portar-pagina-apex`). Los agentes y skills nuevos o cambiados se cargan al reiniciar la sesión (o en `/agents`).
+
+**Agentes** ([.claude/agents/](.claude/agents/)):
+
+| Agente | Modelo | Modo | Para qué |
+|---|---|---|---|
+| `apex-porter` | opus | solo lectura | Analiza el export de una página APEX y arma el plan de port |
+| `ux-ui-designer` | opus | solo lectura | Auditoría y propuesta UX/UI con criterios de aceptación |
+| `frontend-developer` | sonnet | edita | Pantallas y componentes Expo / React Native |
+| `mobile-native` | sonnet | edita | Fallas solo de Android: módulos nativos, WebView, teclado, rendimiento |
+| `backend-developer` | sonnet | edita | Paquetes `PKG_*_APP_ETHOS` y handlers ORDS en `sql/` |
+| `database-architect` | opus | solo lectura | Modelo Oracle, tablas, índices, consultas, rollback |
+| `api-specialist` | sonnet | edita docs y tipos | Contratos del módulo `ethos` y su consumo |
+| `qa-engineer` | sonnet | edita tests solo si se piden | Criterios de aceptación, errores, regresiones |
+| `security-engineer` | opus | solo lectura | Sesión, aislamiento entre facilitadores, exposición de datos, secretos |
+| `devops-engineer` | sonnet | edita config | Workflows, EAS, Pages, APK/AAB |
+| `code-reviewer` | opus | solo lectura | Revisión independiente del diff |
+| `technical-writer` | haiku | edita docs | README, `sql/README.md`, notas de versión |
+| `manual-writer` | sonnet | edita el manual | `docs/manual-usuario.md` + `npm run manual` |
+
+**Skills** ([.claude/skills/](.claude/skills/)):
+
+| Skill | Cuándo |
+|---|---|
+| `portar-pagina-apex` | Al modernizar una página APEX, de punta a punta |
+| `plsql-ords` | Al crear o cambiar scripts de `sql/` o endpoints ORDS |
+| `pantalla-expo` | Al crear o cambiar pantallas y componentes |
+| `analisis-requisitos` | Antes de pedidos amplios o ambiguos |
+| `depuracion-sistematica` | Cuando algo falla; incluye la tabla de fallas ya conocidas |
+| `registrar-decision` | Cuando se decide algo que cambia una regla → `AGENTS.md` |
+| `preparar-publicacion` | Antes de un push a `main` (que publica la web y el APK) |
+
+Reglas que el equipo respeta: no corre `npm test` ni escribe tests salvo pedido (valida con `npm run typecheck` y ESLint sobre lo cambiado); los scripts de `sql/` los ejecutás vos en APEX; no hace push ni publica sin tu aprobación.
+
+Para instalar lo mismo en otro proyecto: [docs/guia-equipo-agentes-claude.md](docs/guia-equipo-agentes-claude.md).
 
 ## Login y sesión
 

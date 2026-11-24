@@ -32,6 +32,7 @@
 - [x] Mi postulación: formulario por pasos para postularse al año lectivo (`POSTULANTES_FACILITADORES`), con endpoints `mi-postulacion/*`.
 - [x] Mi postulación: período de postulación con `FN_POSTULACION_ABIERTA` (`PERIODOS_POSTULACION`, cargada desde el admin, solo lectura); cerrado = solo lectura.
 - [x] Mi postulación → Documentos: foto carnet, cédula y títulos o constancias (foto o PDF) a Cloudinary con el preset `fcfacilitadores`, obligatorios.
+- [x] Equipo de Claude Code: 13 agentes (`.claude/agents/`), 7 skills (`.claude/skills/`) y `CLAUDE.md` con la coordinación; guía para otros proyectos en `docs/guia-equipo-agentes-claude.md`.
 
 ## Pendiente
 - [ ] Web en **facilitadoresfc.online** (workflow `Web`, GitHub Pages): Source = GitHub Actions, registros DNS, Custom domain y Enforce HTTPS (ver README → "iOS y web"). Confirmar que el repo es público (Pages en privado es pago) y que el login funciona desde el dominio (CORS de ORDS).
