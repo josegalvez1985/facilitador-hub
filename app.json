@@ -47,6 +47,12 @@
       ],
       "expo-secure-store",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Facilitadores usa Face ID para que entres sin escribir tu contraseña."
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Facilitadores usa tus fotos para que elijas tu foto de perfil o la foto de tu factura.",

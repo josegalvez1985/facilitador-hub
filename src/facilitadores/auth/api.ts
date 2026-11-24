@@ -181,8 +181,9 @@ export async function login(usuario: string, password: string): Promise<Sesion> 
   const data = (json?.data ?? json) as Record<string, unknown>;
 
   if (!res.ok || json?.success === false || !data?.token) {
-    // El 401 y el 403 traen su mensaje: se muestra tal cual.
-    throw new Error(String(json?.message ?? 'Usuario o contraseña incorrectos'));
+    // El 401 y el 403 traen su mensaje: se muestra tal cual. ErrorApi lleva el status para
+    // distinguir "credenciales rechazadas" (< 500) de una falla del servidor (entrar con huella).
+    throw new ErrorApi(String(json?.message ?? 'Usuario o contraseña incorrectos'), res.status, json);
   }
 
   const nueva = normalizar(data, usuario);

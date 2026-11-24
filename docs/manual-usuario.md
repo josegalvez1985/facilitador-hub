@@ -20,6 +20,19 @@ Facilitadores es tu espacio para marcar tus clases, seguir tu agenda y ver el av
 - La sesión dura **6 horas**. Después te pide ingresar de nuevo.
 - **En la computadora** (navegador): si actualizás la página o abrís la app en otra pestaña, seguís dentro. Si salís en una pestaña, se cierra en todas. En una computadora compartida, acordate de tocar **Salir** al terminar.
 - **En el celular** (app de Android): si cerrás la app, al volver a abrirla te pide ingresar de nuevo.
+
+### Entrar con tu huella (app de Android)
+
+Si tu celular tiene la huella o el reconocimiento de rostro configurado, podés entrar sin escribir la contraseña.
+
+1. Escribí tu usuario y tu contraseña, tildá **Entrar con huella la próxima vez** y tocá **Ingresar**.
+2. El celular te pide la huella para confirmar. Listo: queda activado en este celular.
+3. La próxima vez que abras la app, te pide la huella sola. También podés tocar **Entrar con huella**.
+
+- Si preferís escribir la contraseña, tocá **Usar contraseña** cuando aparezca el pedido de huella.
+- Para desactivarlo, destildá la opción y entrá con tu contraseña.
+- Si cambiás tu contraseña, la huella deja de funcionar: entrá una vez con la contraseña nueva y queda activada otra vez.
+- Funciona solo en el celular donde lo activaste.
 - Solo puede haber **una sesión abierta por usuario**. Si entrás en el sistema anterior, se cierra la sesión acá y aparece el aviso "Tu sesión se cerró".
 - Si te quedás sin señal, la sesión **no** se cierra: aparece "Sin conexión con el servidor" y podés reintentar.
 

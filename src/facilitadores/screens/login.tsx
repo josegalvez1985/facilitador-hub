@@ -1,12 +1,14 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AccessibilityInfo, Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, Check, Download, Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react-native';
+import { ArrowRight, Check, Download, Eye, EyeOff, Fingerprint, LockKeyhole, ScanFace, UserRound } from 'lucide-react-native';
 
 import { descargarApk, ofrecerApk } from '../descarga-apk';
+import { ErrorApi } from '../auth/api';
+import { activarBiometria, credencialesConBiometria, desactivarBiometria, estadoBiometria, nombreBiometria, type Biometria } from '../auth/biometria';
 import { getPasswordRecordada, getUsuarioRecordado, setPasswordRecordada, setUsuarioRecordado } from '../auth/recordar';
 import { useSession } from '../auth/session';
 import { useLayout } from '../shell';
@@ -32,11 +34,68 @@ export function LoginScreen() {
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(false);
   const [apk] = useState(ofrecerApk);
+  // Huella / rostro (solo APK): si el celular puede, y si está activada (bio.usuario).
+  const [bio, setBio] = useState<Biometria | null>(null);
+  const [usarBio, setUsarBio] = useState(false);
+  const pidioAlAbrir = useRef(false);
 
   // replace: que el login no quede en el historial (si no, "atrás" rebota).
   useEffect(() => {
     if (sesion) router.replace('/');
   }, [sesion, router]);
+
+  /**
+   * Pide la huella y hace un login nuevo con lo guardado (la sesión no se guarda: el token sigue
+   * solo en memoria). Si el servidor rechaza la contraseña guardada (cambió), la huella se desactiva.
+   */
+  const entrarConBiometria = useCallback(async () => {
+    setError('');
+    let cred: { usuario: string; password: string } | null;
+    try {
+      cred = await credencialesConBiometria();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'No se pudo confirmar tu identidad.');
+      return;
+    }
+    if (!cred) return; // canceló: queda el formulario
+    setUsuario(cred.usuario);
+    setCargando(true);
+    try {
+      await login(cred.usuario, cred.password);
+      toast.success('Bienvenido');
+      router.replace('/');
+    } catch (err) {
+      if (err instanceof ErrorApi && err.status < 500) {
+        await desactivarBiometria();
+        setBio((b) => (b ? { ...b, usuario: '' } : b));
+        setUsarBio(false);
+        setError('No se pudo entrar con lo guardado: tu contraseña cambió. Entrá con tu contraseña y volvé a activar la opción.');
+      } else setError(err instanceof Error ? err.message : 'No se pudo iniciar sesión');
+    } finally {
+      setCargando(false);
+    }
+  }, [login, router, toast]);
+
+  // Al abrir el login en el APK: si la huella está activada, se pide una vez sola.
+  const entrarRef = useRef(entrarConBiometria);
+  useEffect(() => {
+    entrarRef.current = entrarConBiometria;
+  }, [entrarConBiometria]);
+  useEffect(() => {
+    let vigente = true;
+    void estadoBiometria().then((b) => {
+      if (!vigente) return;
+      setBio(b);
+      setUsarBio(!!b.usuario);
+      if (b.usuario && !pidioAlAbrir.current) {
+        pidioAlAbrir.current = true;
+        void entrarRef.current();
+      }
+    });
+    return () => {
+      vigente = false;
+    };
+  }, []);
 
   useEffect(() => {
     let vigente = true;
@@ -68,6 +127,21 @@ export function LoginScreen() {
       // una contraseña mal escrita quedaría recordada. Destildado, borra las dos.
       await setUsuarioRecordado(recordar ? usuario : '');
       await setPasswordRecordada(recordar ? password : '');
+      // Huella: también recién con el login aceptado. Ya activada para este usuario: solo se
+      // actualiza la contraseña (puede haber cambiado). Nueva: se confirma con la huella.
+      // Destildada: se borra. Si falla o se cancela, el login sigue igual.
+      if (bio?.disponible) {
+        try {
+          if (!usarBio) await desactivarBiometria();
+          else {
+            const mismo = bio.usuario.toUpperCase() === usuario.trim().toUpperCase();
+            const activada = await activarBiometria(usuario, password, !mismo);
+            if (activada && !mismo) toast.success(`Listo: la próxima vez entrás con tu ${nombreBiometria(bio.tipo)}`);
+          }
+        } catch {
+          /* sin huella se pierde la comodidad, no el login */
+        }
+      }
       toast.success('Bienvenido');
       router.replace('/');
     } catch (err) {
@@ -122,12 +196,30 @@ export function LoginScreen() {
               <View style={[s.checkbox, recordar && s.checkboxOn]}>{recordar && <Check size={13} color={colors.primaryForeground} />}</View>
               <Text size={13}>Recordar usuario y contraseña</Text>
             </Pressable>
+            {bio?.disponible ? (
+              <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: usarBio }} onPress={() => setUsarBio(!usarBio)} style={s.remember} hitSlop={6}>
+                <View style={[s.checkbox, usarBio && s.checkboxOn]}>{usarBio && <Check size={13} color={colors.primaryForeground} />}</View>
+                <Text size={13}>Entrar con {nombreBiometria(bio.tipo)} la próxima vez</Text>
+              </Pressable>
+            ) : null}
             {error ? (
               <Text accessibilityRole="alert" size={13} color={colors.destructive} style={{ marginBottom: 14 }}>
                 {error}
               </Text>
             ) : null}
             <Button label={cargando ? 'Iniciando...' : 'Ingresar'} iconRight={cargando ? undefined : ArrowRight} size="lg" onPress={() => void onSubmit()} disabled={cargando} />
+            {bio?.usuario ? (
+              <Button
+                variant="outline"
+                size="lg"
+                icon={bio.tipo === 'rostro' ? ScanFace : Fingerprint}
+                label={`Entrar con ${nombreBiometria(bio.tipo)}`}
+                accessibilityLabel={`Entrar con ${nombreBiometria(bio.tipo)} como ${bio.usuario}`}
+                onPress={() => void entrarConBiometria()}
+                disabled={cargando}
+                style={{ marginTop: 12 }}
+              />
+            ) : null}
           </View>
           {apk && (
             <View style={s.apk}>

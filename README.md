@@ -130,6 +130,12 @@ __tests__/                   Tests
     - Un token vencido guardado no se usa.
 - Hay **un solo token activo por usuario**, compartido con el sistema APEX anterior: entrar en uno cierra la sesión en el otro.
 - **Recordar usuario y contraseña** es opcional. Se guarda solo después de un login correcto: en el APK, en el almacenamiento seguro del sistema (Keystore/Keychain); en la PWA, en `localStorage`, donde la contraseña queda en texto plano. Destildar el check y entrar lo borra.
+- **Entrar con huella o rostro** (solo APK, 24/11/2026; `src/facilitadores/auth/biometria.ts`, `expo-local-authentication`, módulo nativo: **APK nuevo**):
+  - **No guarda la sesión**: el token sigue solo en memoria. La huella habilita un **login nuevo** con el usuario y la contraseña guardados en SecureStore (claves `facilitadores-bio-*`, separadas de "Recordar").
+  - **Opt-in** desde el login: el check **Entrar con huella la próxima vez** aparece si el celular tiene huella o rostro configurado. Se guarda solo después de un login correcto y de confirmar con la huella. Si ya estaba activada para ese usuario, solo se actualiza la contraseña.
+  - Al abrir el login, si está activada, **pide la huella sola** una vez; también está el botón **Entrar con huella**. Solo biometría (`disableDeviceFallback`): el PIN del celular no reemplaza la contraseña.
+  - Si el servidor rechaza la contraseña guardada (`ErrorApi` con status < 500: la contraseña cambió), se desactiva y pide la contraseña. Sin señal o con un 5xx, no.
+  - Cerrar sesión no la borra (igual que "Recordar"). Destildar el check y entrar con contraseña, sí.
 - Si el token vence o el backend lo invalida, aparece **un solo** aviso "Tu sesión se cerró" y la app vuelve al login. Sin señal, la sesión no se cierra: se muestra "Sin conexión con el servidor".
 - Toda llamada nueva al backend tiene que usar `authFetch` de `src/facilitadores/auth/api.ts`.
 
