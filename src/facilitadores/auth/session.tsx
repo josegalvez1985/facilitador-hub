@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 
 import { useToast } from '../toast';
-import { cerrarSesion, getSesion, login as apiLogin, logout as apiLogout, msHastaExpirar, setOnUnauthorized, type Sesion } from './api';
+import { adoptarSesion, cerrarSesion, CLAVE_SESION_WEB, getSesion, login as apiLogin, logout as apiLogout, msHastaExpirar, sesionDeTexto, setOnUnauthorized, type Sesion } from './api';
 import { idFacilitadorDeSesion, olvidarFacilitador } from './facilitador';
 
 /** ID_FACILITADOR del usuario logueado (ver facilitador.ts). `id: null` = no es facilitador. */
@@ -72,6 +72,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     });
     return () => sub.remove();
   }, [caerSesion]);
+
+  // Web: varias pestañas comparten la sesión (localStorage, ver api.ts). Si otra pestaña cierra
+  // sesión, vence o entra con otro usuario, esta la sigue. "storage" solo llega a las OTRAS pestañas.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const alCambiar = (ev: StorageEvent) => {
+      if (ev.key !== CLAVE_SESION_WEB && ev.key !== null) return;
+      const nueva = sesionDeTexto(ev.newValue);
+      const actual = getSesion();
+      if (nueva?.token === actual?.token) return;
+      adoptarSesion(nueva);
+      olvidarFacilitador();
+      setSesion(nueva);
+    };
+    window.addEventListener('storage', alCambiar);
+    return () => window.removeEventListener('storage', alCambiar);
+  }, []);
 
   // ID_FACILITADOR: se resuelve una vez por token, apenas hay sesión. El resultado queda
   // marcado con su token: si cambia la sesión, el de la anterior no se usa nunca.

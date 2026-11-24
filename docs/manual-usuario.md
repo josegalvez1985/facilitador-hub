@@ -18,7 +18,8 @@ Facilitadores es tu espacio para marcar tus clases, seguir tu agenda y ver el av
 3. Tocá **Ingresar**.
 
 - La sesión dura **6 horas**. Después te pide ingresar de nuevo.
-- Por seguridad, al cerrar la app (o recargar la página) vuelve a pedirte el ingreso.
+- **En la computadora** (navegador): si actualizás la página o abrís la app en otra pestaña, seguís dentro. Si salís en una pestaña, se cierra en todas. En una computadora compartida, acordate de tocar **Salir** al terminar.
+- **En el celular** (app de Android): si cerrás la app, al volver a abrirla te pide ingresar de nuevo.
 - Solo puede haber **una sesión abierta por usuario**. Si entrás en el sistema anterior, se cierra la sesión acá y aparece el aviso "Tu sesión se cerró".
 - Si te quedás sin señal, la sesión **no** se cierra: aparece "Sin conexión con el servidor" y podés reintentar.
 
@@ -159,19 +160,31 @@ Acá enviás la factura de cada mes: le sacás una foto y completás sus datos. 
 
 ## Mi postulación
 
-Acá te postulás para seguir como facilitador en el año lectivo y actualizás tus datos. Es una por año.
+Acá te postulás para el año lectivo: para seguir como facilitador, o para empezar a serlo si todavía no lo sos. Es una por año.
 
 1. Abrí **Menú** y tocá **Mi postulación**.
-2. Tocá **Empezar mi postulación**. Si ya te postulaste otro año, tocá **Usar mis datos de** ese año: el formulario arranca completo y solo cambiás lo que haya cambiado.
-3. Completá los pasos: **El proceso**, **Datos personales**, **Domicilio**, **Estudios**, **Trabajo y recursos**, **Disponibilidad**, **Iglesia** y **Cobro**. Tocá **Siguiente** para pasar al próximo. Si falta algo, el campo se marca en rojo.
-4. En **Revisar y enviar** mirá el resumen. Con **Editar** volvés a cualquier sección.
-5. Tocá **Enviar postulación**.
+2. Tocá **Empezar mi postulación**. Si ya sos facilitador, el formulario arranca con los datos que la fundación tiene de vos: revisalos y corregí lo que haya cambiado. Si ya te postulaste otro año, tocá **Usar mis datos de** ese año: el formulario arranca completo y solo cambiás lo que haya cambiado.
+3. En **El proceso** leé las etapas y los requisitos de este año. Para seguir tenés que tocar **Estoy de acuerdo**.
+4. Completá los pasos: **El proceso**, **Datos personales**, **Domicilio**, **Estudios**, **Trabajo y recursos**, **Disponibilidad**, **Iglesia**, **Cobro** y **Documentos**. Tocá **Siguiente** para pasar al próximo. Si falta algo, el campo se marca en rojo.
+5. En **Revisar y enviar** mirá el resumen. Con **Editar** volvés a cualquier sección.
+6. Tocá **Enviar postulación**.
 
 - **Ubicación de tu casa**: si estás en tu casa, tocá **Usar mi ubicación**. Si no, abrí Google Maps, buscá tu casa, tocá **Compartir** y pegá el enlace.
+- **Documentos**: son obligatorios. Siempre se piden una **foto tipo carnet**, tu **cédula de los dos lados**, tu **currículum (CV)**, el **certificado de no agresor** y los certificados de **antecedentes judiciales** y **policiales**. Además, de cada estudio que terminaste se pide el **título**, y del que estás cursando, una **constancia de estudios**.
+  - Para cada uno tocá **Sacar foto**, **Galería** o **PDF**. Se sube enseguida y aparece una marca verde. La foto carnet va solo en foto.
+  - Si te equivocaste, elegilo de nuevo o tocá **Quitar**: el anterior se borra. Con **Ver** lo abrís.
+  - Si ya habías enviado la postulación, el documento anterior se borra recién cuando guardás los cambios.
+  - Borrar la foto de la galería de tu celular no la saca de la postulación: para eso usá **Quitar**.
+  - Sacá la foto con buena luz y que se lea todo. Un PDF puede pesar hasta 10 MB.
 - **Cuenta para el cobro**: si la cuenta está a tu nombre, **La cuenta es mía** completa el titular con tus datos.
 - Podés volver a un paso que ya pasaste tocándolo en la barra de arriba.
-- Si salís sin enviarla, lo que cargaste queda mientras la app esté abierta: al volver tocá **Seguir donde dejaste**. Si cerrás la app, se pierde.
-- Una vez enviada, ves el resumen y la podés **Corregir** cuando quieras.
+- **No hace falta completar todo de una vez.** Tocá **Guardar** (arriba, en cualquier paso) y seguí otro día, aunque cierres la app o entres desde otro celular: tocá **Seguir donde dejaste**.
+- Para **enviarla** tiene que estar todo completo. En **Revisar y enviar** ves lo que te falta; si falta algo, el botón dice **Guardar y terminar después**.
+- Mientras falten datos o archivos, en **Inicio** y en la **campana** de notificaciones te aparece un aviso con lo que falta (por ejemplo "Domicilio: departamento, ciudad" y "Faltan archivos: CV") y el botón **Completar mi postulación**. Si todavía no la empezaste, el aviso te invita a empezarla.
+- Si salís sin tocar **Guardar**, lo que cargaste queda solo mientras la app esté abierta.
+- La postulación se puede cargar y corregir **solo mientras el período de postulación esté abierto**. En la pantalla ves hasta cuándo ("Abierta hasta el…"). Cuando cierra, tu postulación se sigue viendo pero ya no se puede cambiar.
+- Una vez enviada, ves el resumen y la podés **Corregir** mientras el período esté abierto.
+- Si preferís empezar de cero, tocá **Eliminar mi postulación** al final del resumen y confirmá. Se borran la postulación y los documentos que subiste, y podés cargarla de nuevo.
 
 > Para postularte tenés que estar de acuerdo con el proceso. Si elegís **No estoy de acuerdo**, no se envía nada.
 

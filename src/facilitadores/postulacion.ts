@@ -4,11 +4,21 @@
 // Reglas (23/11/2026): el año es el lectivo actual; una postulación por año, que se puede corregir;
 // "No de acuerdo" no envía nada; país 1 (Paraguay). Los códigos son los de los CHECK de la tabla
 // (ojo: cada nivel de estudio usa los suyos, p. ej. CONCLUIDA en licenciatura).
-// Lo cargado y no enviado queda solo en memoria (incluye datos bancarios: nunca en el dispositivo).
+// Ningún campo es obligatorio para GUARDAR (24/11/2026): "Guardar" lo deja en el servidor sin validar
+// (mi-postulacion/borrador → POSTULANTES_FAC_BORRADORES); ENVIARLA pide todo completo. Lo que falta
+// se avisa en Inicio (aviso-postulacion.tsx). En el dispositivo nunca se guarda nada (datos
+// bancarios): lo no guardado queda solo en memoria mientras la app está abierta.
+// Documentos (24/11/2026): foto carnet, cédula de los dos lados, CV, certificado de no agresor,
+// antecedentes judiciales y policiales, y el título o la constancia de cada estudio concluido o en
+// curso, obligatorios. Se suben a Cloudinary al elegirlos (preset
+// fcfacilitadores, firmado por el servidor) y la postulación guarda su enlace (*_url).
 
+import * as DocumentPicker from 'expo-document-picker';
 import * as Location from 'expo-location';
 
 import { authFetch, ErrorApi } from './auth/api';
+import { subirACloudinary, type ArchivoLocal } from './cloudinary';
+import { tomarFoto } from './facturas';
 import { hoy } from './fechas';
 import { ErrorDeCampo } from './intervenciones';
 
@@ -79,6 +89,18 @@ export type Datos = {
   factura_tipo: string;
   factura_emisor: string;
   ruc: string;
+  // Documentos: el secure_url de Cloudinary, o ''.
+  foto_url: string;
+  cedula_frente_url: string;
+  cedula_dorso_url: string;
+  secundario_doc_url: string;
+  tecnico_doc_url: string;
+  licenciatura_doc_url: string;
+  posgrado_doc_url: string;
+  cv_archivo: string;
+  certificado_no_agresor_archivo: string;
+  antecedente_judicial_archivo: string;
+  antecedente_policial_archivo: string;
 };
 
 export type Campo = keyof Datos;
@@ -147,6 +169,17 @@ export function datosVacios(): Datos {
     factura_tipo: '',
     factura_emisor: '',
     ruc: '',
+    foto_url: '',
+    cedula_frente_url: '',
+    cedula_dorso_url: '',
+    secundario_doc_url: '',
+    tecnico_doc_url: '',
+    licenciatura_doc_url: '',
+    posgrado_doc_url: '',
+    cv_archivo: '',
+    certificado_no_agresor_archivo: '',
+    antecedente_judicial_archivo: '',
+    antecedente_policial_archivo: '',
   };
 }
 
@@ -261,10 +294,72 @@ export const pideTitulo = (estado: string) => estado === 'CONCLUIDO' || estado =
 export const etiquetaDe = (opciones: Opcion[], valor: string) => opciones.find((o) => o.valor === valor)?.label ?? valor;
 
 /* ------------------------------------------------------------------------- */
+/* Documentos (las mismas reglas que PKG_POSTULACION_APP_ETHOS.documento)    */
+/* ------------------------------------------------------------------------- */
+
+export type CampoDocumento =
+  | 'foto_url'
+  | 'cedula_frente_url'
+  | 'cedula_dorso_url'
+  | 'cv_archivo'
+  | 'certificado_no_agresor_archivo'
+  | 'antecedente_judicial_archivo'
+  | 'antecedente_policial_archivo'
+  | `${Nivel}_doc_url`;
+
+export type Documento = {
+  campo: CampoDocumento;
+  titulo: string;
+  ayuda: string;
+  /** Solo una foto (la foto carnet); los demás aceptan foto o PDF. */
+  soloFoto: boolean;
+};
+
+export const CAMPOS_DOCUMENTO: CampoDocumento[] = [
+  'foto_url',
+  'cedula_frente_url',
+  'cedula_dorso_url',
+  'cv_archivo',
+  'certificado_no_agresor_archivo',
+  'antecedente_judicial_archivo',
+  'antecedente_policial_archivo',
+  ...NIVELES.map((n) => `${n.nivel}_doc_url` as const),
+];
+
+/**
+ * Los documentos que pide la postulación según lo cargado: siempre la foto carnet, la cédula de
+ * los dos lados, el CV y los certificados (no agresor, antecedentes judiciales y policiales); de
+ * cada estudio concluido, el título, y del que está cursando, una constancia.
+ */
+export function documentosRequeridos(d: Datos): Documento[] {
+  const docs: Documento[] = [
+    { campo: 'foto_url', titulo: 'Foto tipo carnet', ayuda: 'De frente, con buena luz y fondo claro.', soloFoto: true },
+    { campo: 'cedula_frente_url', titulo: 'Cédula, frente', ayuda: 'Que se lean bien el número y tu nombre.', soloFoto: false },
+    { campo: 'cedula_dorso_url', titulo: 'Cédula, dorso', ayuda: 'El lado de atrás de la cédula.', soloFoto: false },
+    { campo: 'cv_archivo', titulo: 'Currículum (CV)', ayuda: 'Tu CV actualizado, mejor en PDF.', soloFoto: false },
+    { campo: 'certificado_no_agresor_archivo', titulo: 'Certificado de no agresor', ayuda: 'Certificado de no agresor sexual de niños, niñas y adolescentes.', soloFoto: false },
+    { campo: 'antecedente_judicial_archivo', titulo: 'Antecedentes judiciales', ayuda: 'Certificado del Poder Judicial.', soloFoto: false },
+    { campo: 'antecedente_policial_archivo', titulo: 'Antecedentes policiales', ayuda: 'Certificado de la Policía.', soloFoto: false },
+  ];
+  for (const n of NIVELES) {
+    const estado = d[campoNivel(n.nivel, 'estado')];
+    if (!pideTitulo(estado)) continue;
+    const cursando = estado === 'CURSANDO';
+    docs.push({
+      campo: `${n.nivel}_doc_url`,
+      titulo: `${cursando ? 'Constancia de estudios' : 'Título'}: ${n.titulo.toLowerCase()}`,
+      ayuda: cursando ? 'Una constancia de que estás cursando, de este año.' : 'El título o el certificado de que terminaste.',
+      soloFoto: false,
+    });
+  }
+  return docs;
+}
+
+/* ------------------------------------------------------------------------- */
 /* Pasos y validación (las mismas reglas que PKG_POSTULACION_APP_ETHOS)      */
 /* ------------------------------------------------------------------------- */
 
-export type PasoId = 'proceso' | 'personales' | 'domicilio' | 'estudios' | 'trabajo' | 'disponibilidad' | 'iglesia' | 'cobro' | 'revisar';
+export type PasoId = 'proceso' | 'personales' | 'domicilio' | 'estudios' | 'trabajo' | 'disponibilidad' | 'iglesia' | 'cobro' | 'documentos' | 'revisar';
 
 export const PASOS: { id: PasoId; titulo: string }[] = [
   { id: 'proceso', titulo: 'El proceso' },
@@ -275,6 +370,7 @@ export const PASOS: { id: PasoId; titulo: string }[] = [
   { id: 'disponibilidad', titulo: 'Disponibilidad' },
   { id: 'iglesia', titulo: 'Iglesia' },
   { id: 'cobro', titulo: 'Cobro' },
+  { id: 'documentos', titulo: 'Documentos' },
   { id: 'revisar', titulo: 'Revisar y enviar' },
 ];
 
@@ -287,6 +383,7 @@ const CAMPOS_PASO: Record<PasoId, Campo[]> = {
   disponibilidad: ['dias_disponibles', 'turno'],
   iglesia: ['iglesia_denominacion', 'iglesia_nombre', 'pastor_nombre', 'pastor_telefono', 'lider_nombre', 'lider_telefono', 'bautizado_agua', 'areas_ministerio'],
   cobro: ['banco_nombre', 'banco_sucursal', 'titular_nombre', 'titular_ci', 'tipo_cuenta', 'numero_cuenta', 'factura_tipo', 'factura_emisor', 'ruc'],
+  documentos: CAMPOS_DOCUMENTO,
   revisar: [],
 };
 
@@ -414,11 +511,99 @@ export function validarPaso(id: PasoId, d: Datos): Errores {
       else if (!RE_RUC.test(d.ruc.replace(/\s/g, ''))) e.ruc = 'El RUC va con el dígito verificador: 1234567-8.';
       break;
 
+    case 'documentos':
+      for (const doc of documentosRequeridos(d)) {
+        if (vacio(d[doc.campo])) e[doc.campo] = `Falta subir: ${doc.titulo.toLowerCase()}.`;
+      }
+      break;
+
     case 'revisar':
       break;
   }
   return e;
 }
+
+/** Cómo se llama cada dato en los avisos de "lo que falta". */
+const ETIQUETA: Partial<Record<Campo, string>> = {
+  acepta_proceso: 'acuerdo con el proceso',
+  nombre_completo: 'nombre completo',
+  cedula: 'cédula',
+  fecha_nacimiento: 'fecha de nacimiento',
+  nacionalidad: 'nacionalidad',
+  telefono: 'teléfono',
+  correo_electronico: 'correo',
+  estado_civil: 'estado civil',
+  estado_civil_otro: 'cuál es tu estado civil',
+  vive_con: 'con quién vivís',
+  hijos: 'hijos',
+  id_departamento: 'departamento',
+  id_ciudad: 'ciudad',
+  direccion: 'dirección',
+  ubicacion_domicilio: 'ubicación de tu casa',
+  secundario_estado: 'secundaria',
+  secundario_titulo: 'título de bachiller',
+  tecnico_estado: 'técnico superior',
+  tecnico_titulo: 'carrera técnica',
+  tecnico_anio: 'curso del técnico',
+  licenciatura_estado: 'licenciatura',
+  licenciatura_titulo: 'carrera de licenciatura',
+  licenciatura_anio: 'curso de la licenciatura',
+  posgrado_estado: 'posgrado',
+  posgrado_titulo: 'nombre del posgrado',
+  posgrado_anio: 'curso del posgrado',
+  actividad_laboral: 'si trabajás',
+  empresa: 'empresa',
+  cargo: 'cargo',
+  movilidad_propia: 'movilidad propia',
+  tipo_vehiculo: 'tipo de vehículo',
+  computadora_propia: 'computadora propia',
+  internet_estable: 'internet estable',
+  manejo_office: 'manejo de Office',
+  dias_disponibles: 'días disponibles',
+  turno: 'turno',
+  iglesia_denominacion: 'denominación',
+  iglesia_nombre: 'nombre de la iglesia',
+  pastor_nombre: 'pastor',
+  pastor_telefono: 'teléfono del pastor',
+  lider_nombre: 'líder',
+  lider_telefono: 'teléfono del líder',
+  bautizado_agua: 'bautismo en agua',
+  areas_ministerio: 'áreas en las que servís',
+  banco_nombre: 'banco',
+  banco_sucursal: 'sucursal',
+  titular_nombre: 'titular de la cuenta',
+  titular_ci: 'cédula del titular',
+  tipo_cuenta: 'tipo de cuenta',
+  numero_cuenta: 'número de cuenta',
+  factura_tipo: 'tipo de factura',
+  factura_emisor: 'emisor de la factura',
+  ruc: 'RUC',
+};
+
+export type PasoFaltante = { paso: number; titulo: string; campos: string[] };
+
+/**
+ * Lo que falta para terminar la postulación (para el aviso de Inicio, la campana y el último
+ * paso): por paso, los datos sin completar o mal escritos, y los archivos que faltan subir.
+ * Vacío = completa.
+ */
+export function faltantes(d: Datos): { pasos: PasoFaltante[]; archivos: string[] } {
+  const pasos: PasoFaltante[] = [];
+  PASOS.forEach((p, i) => {
+    if (p.id === 'documentos' || p.id === 'revisar') return;
+    const campos = (Object.keys(validarPaso(p.id, d)) as Campo[]).map((c) => ETIQUETA[c] ?? c);
+    if (campos.length) pasos.push({ paso: i, titulo: p.titulo, campos });
+  });
+  const archivos = documentosRequeridos(d)
+    .filter((doc) => !d[doc.campo].trim())
+    .map((doc) => doc.titulo);
+  return { pasos, archivos };
+}
+
+export const estaCompleta = (d: Datos) => {
+  const f = faltantes(d);
+  return f.pasos.length === 0 && f.archivos.length === 0;
+};
 
 /** El primer paso con errores (o null si está todo bien) y sus errores. */
 export function primerPasoConErrores(d: Datos): { paso: number; errores: Errores } | null {
@@ -449,16 +634,45 @@ export type EstadoPostulacion = {
   esFacilitador: boolean;
   anio: string;
   /** Si el año lectivo actual está en ANIOS_LECTIVOS. */
+  anioRegistrado: boolean;
+  /** Si el período de postulación deja cargar y modificar (FN_POSTULACION_ABIERTA = 'SI'). */
   abierta: boolean;
+  /** El período de PERIODOS_POSTULACION (YYYY-MM-DD), o null si no está cargado. */
+  periodo: { inicio: string; fin: string; extraordinaria: boolean } | null;
+  /** Etapas y requisitos del proceso de ese año (ANIOS_LECTIVOS.PROCESO_POSTULACION), en texto. '' si no está cargado. */
+  proceso: string;
   facilitador: { nombre: string; telefono: string; fechaNacimiento: string };
+  /** Si ya es facilitador: lo que se sabe de él en FACILITADORES, con los códigos de la postulación (para precargar). */
+  deFacilitador: Partial<Datos>;
   /** La del año abierto, si ya la envió. */
   postulacion: Postulacion | null;
   /** La más reciente de otro año, para precargar. */
   anterior: Postulacion | null;
+  /** Lo guardado sin terminar este año (en el servidor, POSTULANTES_FAC_BORRADORES). */
+  guardada: Guardada | null;
 };
+
+/** Postulación guardada sin terminar: lo cargado, el paso donde quedó y cuándo (hora de Paraguay). */
+export type Guardada = { datos: Datos; paso: number; fecha: string };
 
 export type Lugar = { id: number; nombre: string };
 export type Departamento = Lugar & { ciudades: Lugar[] };
+
+/**
+ * Una línea sobre el período para mostrar: "Abierta hasta el 15/12/2026", "Abre el 01/12/2026",
+ * "Cerró el 15/12/2026". Compara con la fecha del dispositivo (fechas.ts).
+ */
+export function textoPeriodo(e: Pick<EstadoPostulacion, 'abierta' | 'periodo'>): string {
+  const p = e.periodo;
+  if (!p) return e.abierta ? '' : 'La coordinación todavía no habilitó el período de postulación.';
+  const hoyIso = (() => {
+    const h = hoy();
+    return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}`;
+  })();
+  if (e.abierta) return p.extraordinaria && hoyIso > p.fin ? 'Habilitada de forma extraordinaria por la coordinación.' : `Abierta hasta el ${isoADma(p.fin)}.`;
+  if (hoyIso < p.inicio) return `El período de postulación abre el ${isoADma(p.inicio)}.`;
+  return `El período de postulación cerró el ${isoADma(p.fin)}.`;
+}
 
 export const FALTA_PUBLICAR = 'Falta publicar en el backend los endpoints de mi-postulacion (sql/postulacion_app_ethos.sql).';
 /** Un endpoint sin publicar: ORDS responde "Not Found". */
@@ -502,11 +716,185 @@ export async function cargarPostulacion(): Promise<EstadoPostulacion> {
   return {
     esFacilitador: r.es_facilitador === true,
     anio: s(r.anio),
+    // Un servidor viejo no manda anio_registrado: ahí "abierta" significaba que el año existe.
+    anioRegistrado: typeof r.anio_registrado === 'boolean' ? r.anio_registrado : r.abierta === true,
     abierta: r.abierta === true,
+    periodo: (() => {
+      const p = obj(r.periodo);
+      return p ? { inicio: s(p.fecha_inicio), fin: s(p.fecha_fin), extraordinaria: p.extraordinaria === true } : null;
+    })(),
+    proceso: textoDeProceso(typeof r.proceso === 'string' ? r.proceso : ''),
     facilitador: { nombre: s(f.nombre), telefono: s(f.telefono), fechaNacimiento: s(f.fecha_nacimiento) },
+    deFacilitador: datosDeFacilitador(f),
     postulacion: postulacionDe(r.postulacion),
     anterior: postulacionDe(r.anterior),
+    guardada: guardadaDe(r.borrador),
   };
+}
+
+/**
+ * PROCESO_POSTULACION a texto para mostrar: puede venir como texto plano o como HTML del editor de
+ * APEX. Del HTML quedan los párrafos y las viñetas (•); el resto de las etiquetas se saca.
+ */
+export function textoDeProceso(v: string): string {
+  const t = v.replace(/\r\n/g, '\n');
+  // Venga como venga (un renglón, con saltos de línea o HTML), se ordena igual en la app.
+  return ordenarProceso(/<[a-z][\s\S]*>/i.test(t) ? deHtml(t) : t);
+}
+
+/** HTML del editor de APEX → texto: párrafos y viñetas (•); el resto de las etiquetas se saca. */
+function deHtml(v: string): string {
+  return v
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '\n• ')
+    // </li> no: cada <li> ya abre su renglón (si no, quedan renglones en blanco entre viñetas).
+    .replace(/<\/(p|div|h[1-6]|ul|ol|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * Un proceso escrito en un solo renglón (como se carga desde APEX), separado para leerlo:
+ * - "1) … 2) …" y "a) … b) …": un párrafo cada uno.
+ * - Un título en mayúsculas después de un punto (". REQUISITOS …"): párrafo nuevo.
+ * - " - " después de ":" dentro del mismo párrafo ("documentos: - Cédula - CV"): viñetas.
+ *   Antes del ":" el guion se deja ("POSTULACIÓN - FACILITADORES").
+ */
+function ordenarProceso(texto: string): string {
+  // Renglones que ya empiezan con "-" o "*" son viñetas, haya o no ":" antes.
+  const t = texto.trim().replace(/\n[ \t]*[-*•][ \t]+/g, '\n• ');
+  const parrafos = t
+    .replace(/\s+(?=\d{1,2}\)\s)/g, '\n\n')
+    .replace(/\s+(?=[a-z]\)\s)/g, '\n\n')
+    .replace(/\.\s+(?=[A-ZÁÉÍÓÚÑ]{6,}\b)/g, '.\n\n')
+    .split('\n\n');
+  return parrafos
+    .map((p) => {
+      const i = p.indexOf(':');
+      if (i < 0) return p;
+      return p.slice(0, i + 1) + p.slice(i + 1).replace(/\s+-\s+/g, '\n• ');
+    })
+    .join('\n\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/* ------------------------------------------------------------------------- */
+/* Precarga desde FACILITADORES (si ya es facilitador)                       */
+/* ------------------------------------------------------------------------- */
+
+/** "Sí", "si", "S" → "SI"; "No", "N" → "NO"; otra cosa → "". */
+const siNo = (v: unknown) => {
+  const t = codigoDia(v);
+  return /^S(I)?$/.test(t) ? 'SI' : /^N(O)?$/.test(t) ? 'NO' : '';
+};
+
+/**
+ * Los datos de FACILITADORES (texto libre en el sistema APEX) llevados a los códigos de la
+ * postulación. Lo que no se reconoce queda vacío para que lo complete. Nacionalidad no: en
+ * FACILITADORES es un id de NACIONALIDADES y no se conoce esa tabla.
+ */
+function datosDeFacilitador(f: Record<string, unknown>): Partial<Datos> {
+  const d: Partial<Datos> = {};
+  const txt = (clave: string) => s(f[clave]);
+  const poner = <K extends keyof Datos>(campo: K, valor: Datos[K] | '' | null) => {
+    if (valor !== '' && valor !== null) d[campo] = valor as Datos[K];
+  };
+
+  poner('nombre_completo', txt('nombre'));
+  poner('cedula', soloCedula(txt('cedula')));
+  poner('fecha_nacimiento', /^\d{4}-\d{2}-\d{2}$/.test(txt('fecha_nacimiento')) ? txt('fecha_nacimiento') : '');
+  poner('telefono', txt('telefono'));
+  poner('correo_electronico', txt('email').toLowerCase());
+
+  const civil = codigoDia(f.estado_civil);
+  if (civil) {
+    if (civil.startsWith('SOLTER')) poner('estado_civil', 'SOLTERO');
+    else if (civil.startsWith('CASAD')) poner('estado_civil', 'CASADO');
+    else {
+      poner('estado_civil', 'OTROS');
+      poner('estado_civil_otro', txt('estado_civil'));
+    }
+  }
+  const vive = codigoDia(f.con_quien_vive);
+  if (vive) poner('vive_con', /\bSOL[OA]\b/.test(vive) ? 'SOLO' : /PADRE|MADRE/.test(vive) ? 'PADRES' : /CONYUGE|ESPOS|PAREJA|MARIDO/.test(vive) ? 'CONYUGE' : 'OTROS');
+  poner('hijos', siNo(f.hijos));
+
+  // Domicilio: solo de Paraguay (la postulación es siempre país 1).
+  if ((num(f.id_pais) ?? PAIS_POR_DEFECTO) === PAIS_POR_DEFECTO) {
+    poner('id_departamento', num(f.id_departamento));
+    poner('id_ciudad', num(f.id_ciudad));
+  }
+  poner('direccion', txt('direccion'));
+  poner('ubicacion_domicilio', txt('ubicacion'));
+
+  poner('movilidad_propia', siNo(f.vehiculo));
+  const vehiculo = codigoDia(f.tipo_vehiculo);
+  if (vehiculo) poner('tipo_vehiculo', /MOTO/.test(vehiculo) ? 'MOTOCICLETA' : /AUTO|CAMIONETA|COCHE/.test(vehiculo) ? 'AUTO' : '');
+  poner('computadora_propia', siNo(f.computadora));
+  poner('internet_estable', siNo(f.internet));
+  poner('manejo_office', siNo(f.office));
+
+  poner('iglesia_denominacion', txt('denominacion'));
+  poner('iglesia_nombre', txt('nombre_iglesia'));
+  poner('pastor_nombre', txt('nombre_pastor'));
+  poner('pastor_telefono', txt('telefono_pastor'));
+  poner('lider_nombre', txt('nombre_lider'));
+  poner('lider_telefono', txt('telefono_lider'));
+  poner('bautizado_agua', siNo(f.bautizado_agua));
+  poner('areas_ministerio', txt('area_servicio'));
+
+  poner('banco_nombre', txt('banco'));
+  poner('banco_sucursal', txt('sucursal'));
+  poner('titular_nombre', txt('titular'));
+  poner('titular_ci', soloCedula(txt('titular_ci')));
+  const cuenta = codigoDia(f.tipo_cuenta);
+  poner('tipo_cuenta', /AHORRO/.test(cuenta) ? 'Caja de ahorro' : /CORRIENTE/.test(cuenta) ? 'Cuenta corriente' : txt('tipo_cuenta'));
+  poner('numero_cuenta', txt('numero_cuenta'));
+  poner('factura_emisor', txt('emisor'));
+  poner('ruc', txt('ruc').replace(/\s/g, ''));
+  const factura = codigoDia(f.tipo_factura);
+  if (factura) poner('factura_tipo', /VIRTUAL|ELECTR/.test(factura) ? 'VIRTUAL' : /FISIC|PAPEL|PREIMPRES/.test(factura) ? 'FISICA' : '');
+  return d;
+}
+
+function guardadaDe(v: unknown): Guardada | null {
+  const b = obj(v);
+  if (!b || typeof b.datos !== 'string') return null;
+  try {
+    const datos = obj(JSON.parse(b.datos));
+    if (!datos) return null;
+    const paso = Number(b.paso);
+    return { datos: datosDe(datos), paso: Number.isInteger(paso) && paso >= 0 && paso < PASOS.length ? paso : 0, fecha: s(b.fecha) };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Guarda lo cargado SIN TERMINAR, en el servidor y sin validar (ningún campo es obligatorio para
+ * guardar). La postulación queda terminada recién al enviarla completa (enviarPostulacion).
+ */
+export async function guardarSinTerminar(d: Datos, paso: number): Promise<void> {
+  await authFetch('mi-postulacion/borrador', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paso, datos: JSON.stringify(d) }),
+  });
+}
+
+/** Descarta lo guardado sin terminar; el servidor borra también sus documentos. DELETE sin cuerpo. */
+export async function descartarGuardada(): Promise<void> {
+  await authFetch('mi-postulacion/borrador', { method: 'DELETE' });
 }
 
 // Los departamentos y ciudades casi no cambian: se piden una vez por sesión de la app.
@@ -550,7 +938,7 @@ function payload(d: Datos): Record<string, unknown> {
   if (d.estado_civil !== 'OTROS') out.estado_civil_otro = '';
   for (const n of NIVELES) {
     const estado = d[campoNivel(n.nivel, 'estado')];
-    if (!pideTitulo(estado)) out[campoNivel(n.nivel, 'titulo')] = '';
+    if (!pideTitulo(estado)) out[campoNivel(n.nivel, 'titulo')] = out[`${n.nivel}_doc_url`] = '';
     if (n.conAnio) out[campoNivel(n.nivel, 'anio')] = estado === 'CURSANDO' ? d[campoNivel(n.nivel, 'anio')].replace(/\s/g, '') : '';
   }
   if (d.actividad_laboral !== 'SI') out.empresa = out.cargo = '';
@@ -571,6 +959,60 @@ export async function enviarPostulacion(d: Datos): Promise<{ nueva: boolean }> {
     if (e instanceof ErrorApi && typeof e.datos.campo === 'string') throw new ErrorDeCampo(e.message, e.datos.campo);
     throw e;
   }
+}
+
+/**
+ * Elimina la postulación del año abierto (para cargarla de nuevo). El servidor borra también sus
+ * documentos de Cloudinary. DELETE sin cuerpo ni Content-Type (ORDS da 400 si no).
+ */
+export async function eliminarPostulacion(): Promise<void> {
+  await authFetch('mi-postulacion', { method: 'DELETE' });
+}
+
+/* ------------------------------------------------------------------------- */
+/* Subida de documentos (directo a Cloudinary, preset fcfacilitadores)        */
+/* ------------------------------------------------------------------------- */
+
+/** Tope de un PDF (el de Cloudinary para un archivo). Las fotos se achican solas a 3 MB. */
+const TOPE_PDF = 10 * 1024 * 1024;
+
+/** Saca una foto o la elige de la galería (achicada a JPEG). null si se cancela. */
+export async function fotoDeDocumento(origen: 'camara' | 'galeria'): Promise<ArchivoLocal | null> {
+  const f = await tomarFoto(origen);
+  return f ? { uri: f.uri, nombre: 'documento.jpg', tipo: 'image/jpeg' } : null;
+}
+
+/** Un PDF del celular o la computadora. null si se cancela. */
+export async function pdfDeDocumento(): Promise<ArchivoLocal | null> {
+  const r = await DocumentPicker.getDocumentAsync({ type: 'application/pdf', copyToCacheDirectory: true, multiple: false });
+  const a = r.canceled ? undefined : r.assets[0];
+  if (!a) return null;
+  if (a.size && a.size > TOPE_PDF) throw new Error('El PDF pesa más de 10 MB. Probá subiendo una foto del documento.');
+  return { uri: a.uri, nombre: a.name || 'documento.pdf', tipo: a.mimeType || 'application/pdf', file: a.file };
+}
+
+/**
+ * Sube el documento con la firma de POST mi-postulacion/firma-documento y devuelve su enlace.
+ * Queda en Cloudinary aunque la postulación no se envíe; al reemplazarlo en una postulación ya
+ * enviada, el servidor borra el anterior.
+ */
+export function subirDocumento(archivo: ArchivoLocal): Promise<string> {
+  return subirACloudinary('mi-postulacion/firma-documento', archivo, 'Todavía no se pueden subir documentos. Avisale a la coordinación.');
+}
+
+/**
+ * Borra de Cloudinary un documento que el usuario quitó o reemplazó. El servidor solo borra lo que
+ * le firmó a este usuario y lo que ninguna postulación guardada usa (eso se borra al guardar la
+ * corrección). Es limpieza: si falla, no frena al usuario. DELETE sin cuerpo (ORDS da 400 si no).
+ */
+export function quitarDocumento(url: string): void {
+  if (!url) return;
+  authFetch(`mi-postulacion/documento?url=${encodeURIComponent(url)}`, { method: 'DELETE' }).catch(() => {});
+}
+
+/** Quita de Cloudinary los documentos de un borrador descartado (los ya guardados quedan). */
+export function quitarDocumentosDe(d: Datos): void {
+  for (const c of CAMPOS_DOCUMENTO) quitarDocumento(d[c]);
 }
 
 /* ------------------------------------------------------------------------- */

@@ -6,15 +6,25 @@
 --
 --   0. Verificacion previa
 --   1. Estructura: verifica que POSTULANTES_FACILITADORES ya tenga
---      ID_FACILITADOR con su FK e indice. NO crea ni cambia nada de la tabla:
---      la estructura la definio Jose (23/11/2026) y es la fuente de verdad.
+--      ID_FACILITADOR con su FK e indice (la estructura la definio Jose el
+--      23/11/2026 y es la fuente de verdad) y le AGREGA, si faltan, las 7
+--      columnas de los documentos (*_URL, 24/11/2026). No cambia ni borra
+--      ninguna columna existente.
 --   2. Paquete PKG_POSTULACION_APP_ETHOS
 --   3. Endpoints EXCLUSIVOS en el modulo ORDS 'ethos' (YA EXISTENTE, NO se redefine):
 --        GET  mi-postulacion
 --        POST mi-postulacion
+--        DELETE mi-postulacion          (elimina la suya del año, para cargarla de nuevo)
+--        PUT    mi-postulacion/borrador (guarda sin terminar, sin validar)
+--        DELETE mi-postulacion/borrador (descarta lo guardado sin terminar)
 --        GET  mi-postulacion/lugares
+--        POST mi-postulacion/firma-documento
+--        DELETE mi-postulacion/documento?url=
 --      No pisa nada: si alguna ruta ya existe y NO es de este paquete, se detiene.
 --   4. Verificacion
+--
+-- REQUISITO: PKG_CLOUDINARY_ETHOS (backend/cloudinary.sql del sitio), el mismo
+-- de Mis facturas, con la clave, el secreto y el cloud ya cargados.
 --
 -- COMO CORRERLO
 --   APEX -> SQL Workshop -> SQL Scripts -> Upload -> Run, con el usuario dueño
@@ -32,9 +42,16 @@
 --                    FK POSTULANTES_FAC_FK_FACILITADORES -> FACILITADORES.
 --                    Indice IDX_POSTULANTES_FAC_FACILITADOR.
 --
--- Desde la app, ID_FACILITADOR lo pone SIEMPRE el servidor a partir del token
--- (FACILITADORES.USUARIO = usuario del token), nunca el cliente: un facilitador
--- solo ve y carga SU postulacion.
+--   USUARIO          (agregada por este script, 24/11/2026) El login de quien
+--                    la cargo desde la app. NULL en las del JV26.
+--                    Indice unico UX_POSTULANTES_FAC_USUARIO_ANIO
+--                    (USUARIO, ID_ANIO), solo de las filas con USUARIO.
+--
+-- Desde la app se puede postular CUALQUIER usuario con sesion, sea o no
+-- facilitador (Jose, 24/11/2026). El servidor pone SIEMPRE, a partir del
+-- token, USUARIO y, si es facilitador, ID_FACILITADOR (FACILITADORES.USUARIO =
+-- usuario del token); nunca el cliente. Cada uno solo ve y carga SU
+-- postulacion: la de su ID_FACILITADOR o la de su USUARIO.
 --
 -- FECHA_REGISTRO tiene DEFAULT SYSTIMESTAMP, que en oracleapex.com es hora UTC.
 -- El paquete la graba con la hora de Paraguay (SYSDATE - 3/24), igual que
@@ -47,9 +64,14 @@
 -- - El año: el lectivo ACTUAL, FN_ANIO_LECTIVO_ACTUAL(), buscado en
 --   ANIOS_LECTIVOS (ID_ANIO, ANIO). Si no esta en la tabla, no hay postulacion
 --   abierta. Se cambia en un solo lugar: anio_abierto.
--- - UNA postulacion por facilitador y año, controlada aca (la tabla no tiene
---   indice unico): si ya existe, el POST la CORRIGE en vez de crear otra.
--- - Se puede corregir despues de enviarla, mientras sea el año abierto.
+-- - UNA postulacion por usuario y año: si ya existe, el POST la CORRIGE en vez
+--   de crear otra. Un alta doble a la vez la frena el indice unico (409).
+-- - Se puede cargar, corregir, guardar sin terminar, subir documentos y
+--   eliminar SOLO mientras el periodo de postulacion este abierto:
+--   FN_POSTULACION_ABIERTA(ID_ANIO) = 'SI' (PERIODOS_POSTULACION, Jose
+--   24/11/2026). Cerrado, el GET la sigue mostrando (solo lectura) y todo lo
+--   que escribe responde 409.
+-- - Se puede corregir despues de enviarla, mientras el periodo este abierto.
 --   FECHA_REGISTRO queda la del primer envio.
 -- - "No de acuerdo": no se envia nada. El POST solo acepta DE_ACUERDO.
 -- - Pais por defecto: 1 (Paraguay).
@@ -60,22 +82,76 @@
 --   o el enlace de Google Maps que pegue el facilitador.
 --
 --------------------------------------------------------------------------------
+-- DOCUMENTOS (Jose, 24/11/2026)
+--------------------------------------------------------------------------------
+--
+-- El facilitador sube sus documentos (foto o PDF) al postularse, OBLIGATORIOS:
+--
+--   FOTO_URL               foto tipo carnet (solo foto)          siempre
+--   CEDULA_FRENTE_URL      cedula, frente                        siempre
+--   CEDULA_DORSO_URL       cedula, dorso                         siempre
+--   SECUNDARIO_DOC_URL     titulo de bachiller                   si CONCLUIDO
+--   TECNICO_DOC_URL        titulo (concluido) o constancia (cursando)
+--   LICENCIATURA_DOC_URL   titulo (concluida) o constancia (cursando)
+--   POSGRADO_DOC_URL       titulo (concluido) o constancia (cursando)
+--   CV_ARCHIVO                       curriculum (CV)             siempre
+--   CERTIFICADO_NO_AGRESOR_ARCHIVO   no agresor sexual de NNA    siempre
+--   ANTECEDENTE_JUDICIAL_ARCHIVO     Poder Judicial              siempre
+--   ANTECEDENTE_POLICIAL_ARCHIVO     Policia                     siempre
+--   (estas 4 las creo Jose; el script solo verifica que existan)
+--
+-- Con NO / INCONCLUSO / INCONCLUSA el documento de ese nivel queda NULL.
+--
+-- La app sube cada archivo DIRECTO a Cloudinary con la firma de
+-- POST mi-postulacion/firma-documento (preset Signed 'fcfacilitadores',
+-- carpeta 'postulaciones-facilitadores') y manda su secure_url. El secreto
+-- queda en Oracle (CLOUDINARY_CONFIG): la firma la arma este paquete con la
+-- misma clave, secreto y cloud que usa PKG_CLOUDINARY_ETHOS para las
+-- facturas, pero con el preset de las postulaciones. El POST solo acepta
+-- enlaces de nuestro cloud (PKG_CLOUDINARY_ETHOS.es_url_propia).
+--
+-- Borrado (Jose, 24/11/2026: "si el usuario elimina una foto se debe eliminar
+-- tambien de Cloudinary"):
+--   - Al firmar, el servidor elige el nombre del archivo (public_id al azar) y
+--     lo anota a nombre del usuario en POSTULANTES_FAC_ARCHIVOS (tabla solo
+--     de la app). Solo ese usuario puede borrarlo.
+--   - Quitar o reemplazar un documento en la app -> DELETE
+--     mi-postulacion/documento?url=: se borra enseguida si ninguna postulacion
+--     guardada lo usa. Si lo usa, se borra al guardar la correccion.
+--   - Al corregir y reemplazar un documento, despues del COMMIT se borra de
+--     Cloudinary el anterior, salvo que lo use otra postulacion (la de otro
+--     año, si la precargo).
+--   - Si PKG_CLOUDINARY_ETHOS no tiene BORRAR, el archivo queda en Cloudinary
+--     y todo lo demas funciona igual.
+--
+--------------------------------------------------------------------------------
 -- CONTRATO
 --------------------------------------------------------------------------------
 --
 --   GET  mi-postulacion
 --        { success, es_facilitador, anio, abierta,
+--          proceso: ANIOS_LECTIVOS.PROCESO_POSTULACION del año abierto (o null),
 --          facilitador: { nombre, telefono, fecha_nacimiento },
 --          postulacion: { ...la del año abierto }     (si ya la envio)
 --          anterior:    { ...la mas reciente de otro año } (para precargar) }
 --        Cada postulacion: { id, anio, fecha_registro ('YYYY-MM-DDTHH:MI'),
 --          las columnas de la tabla en minuscula (fecha_nacimiento 'YYYY-MM-DD',
---          dias_disponibles como arreglo), departamento, ciudad }.
+--          dias_disponibles como arreglo, los documentos como foto_url,
+--          cedula_frente_url...), departamento, ciudad }.
 --
 --   POST mi-postulacion   (JSON con las mismas claves; dias_disponibles arreglo)
 --        200 { success, id, nueva, message }
---        400 { success:false, message, campo } · 403 no es facilitador
---        409 no hay año lectivo abierto
+--        400 { success:false, message, campo }
+--        409 no hay año lectivo abierto, o un alta doble a la vez
+--
+--   POST mi-postulacion/firma-documento   (sin cuerpo)
+--        200 { success, cloud_name, upload_url,
+--              campos: { api_key, public_id, timestamp, upload_preset, asset_folder, signature } }
+--        409 no hay año lectivo abierto · 503 Cloudinary sin configurar
+--
+--   DELETE mi-postulacion/documento?url=   (sin cuerpo)
+--        200 { success, borrado, en_uso?, aviso? }
+--        400 enlace no valido · 404 no es un archivo firmado para este usuario
 --
 --   GET  mi-postulacion/lugares?id_pais=   (vacio = 1)
 --        { success, id_pais, departamentos: [ { id, nombre,
@@ -97,7 +173,10 @@ BEGIN
             UNION ALL SELECT 'ANIOS_LECTIVOS', 'TABLE' FROM dual
             UNION ALL SELECT 'DEPARTAMENTOS', 'TABLE' FROM dual
             UNION ALL SELECT 'CIUDADES', 'TABLE' FROM dual
-            UNION ALL SELECT 'PKG_AUTH_ETHOS', 'PACKAGE BODY' FROM dual) LOOP
+            UNION ALL SELECT 'PKG_AUTH_ETHOS', 'PACKAGE BODY' FROM dual
+            UNION ALL SELECT 'PKG_CLOUDINARY_ETHOS', 'PACKAGE BODY' FROM dual
+            UNION ALL SELECT 'PERIODOS_POSTULACION', 'TABLE' FROM dual
+            UNION ALL SELECT 'FN_POSTULACION_ABIERTA', 'FUNCTION' FROM dual) LOOP
     SELECT COUNT(*) INTO l_n FROM USER_OBJECTS
      WHERE OBJECT_NAME = o.nombre AND OBJECT_TYPE = o.tipo;
     IF l_n = 0 THEN
@@ -110,8 +189,111 @@ END;
 /
 
 --------------------------------------------------------------------------------
--- 1. ESTRUCTURA (solo verifica; la tabla no se toca)
+-- 1. ESTRUCTURA (verifica; solo agrega las columnas de documentos si faltan)
 --------------------------------------------------------------------------------
+
+DECLARE
+  l_n PLS_INTEGER;
+  PROCEDURE agregar(p_columna IN VARCHAR2, p_comentario IN VARCHAR2,
+                    p_tipo IN VARCHAR2 DEFAULT 'VARCHAR2(500 CHAR)') IS
+    l_n PLS_INTEGER;
+  BEGIN
+    SELECT COUNT(*) INTO l_n FROM USER_TAB_COLUMNS
+     WHERE TABLE_NAME = 'POSTULANTES_FACILITADORES' AND COLUMN_NAME = p_columna;
+    IF l_n = 0 THEN
+      EXECUTE IMMEDIATE 'ALTER TABLE POSTULANTES_FACILITADORES ADD (' || p_columna || ' ' || p_tipo || ')';
+      DBMS_OUTPUT.PUT_LINE('[OK]   Columna ' || p_columna || ' agregada.');
+    ELSE
+      DBMS_OUTPUT.PUT_LINE('[OK]   Columna ' || p_columna || ' ya existia.');
+    END IF;
+    EXECUTE IMMEDIATE 'COMMENT ON COLUMN POSTULANTES_FACILITADORES.' || p_columna
+                      || ' IS ''' || REPLACE(p_comentario, '''', '''''') || '''';
+  END agregar;
+BEGIN
+  agregar('FOTO_URL',             'Enlace (Cloudinary) de la foto tipo carnet del postulante.');
+  agregar('CEDULA_FRENTE_URL',    'Enlace (Cloudinary) de la foto o PDF del frente de la cédula.');
+  agregar('CEDULA_DORSO_URL',     'Enlace (Cloudinary) de la foto o PDF del dorso de la cédula.');
+  agregar('SECUNDARIO_DOC_URL',   'Enlace (Cloudinary) del título de bachiller, si la secundaria está concluida.');
+  agregar('TECNICO_DOC_URL',      'Enlace (Cloudinary) del título (concluido) o la constancia de estudios (cursando) del técnico superior.');
+  agregar('LICENCIATURA_DOC_URL', 'Enlace (Cloudinary) del título (concluida) o la constancia de estudios (cursando) de la licenciatura.');
+  agregar('POSGRADO_DOC_URL',     'Enlace (Cloudinary) del título (concluido) o la constancia de estudios (cursando) del posgrado.');
+
+  -- El proceso de postulacion de cada año (lo agrego Jose, 24/11/2026). Solo se verifica.
+  SELECT COUNT(*) INTO l_n FROM USER_TAB_COLUMNS
+   WHERE TABLE_NAME = 'ANIOS_LECTIVOS' AND COLUMN_NAME = 'PROCESO_POSTULACION';
+  DBMS_OUTPUT.PUT_LINE(CASE WHEN l_n > 0 THEN '[OK]   ' ELSE '[ERROR] Falta ' END
+                       || 'columna ANIOS_LECTIVOS.PROCESO_POSTULACION');
+
+  -- Documentos que agrego Jose (24/11/2026). El script NO los crea: solo verifica.
+  FOR c IN (SELECT COLUMN_VALUE AS col FROM TABLE(SYS.ODCIVARCHAR2LIST(
+              'CV_ARCHIVO', 'CERTIFICADO_NO_AGRESOR_ARCHIVO',
+              'ANTECEDENTE_JUDICIAL_ARCHIVO', 'ANTECEDENTE_POLICIAL_ARCHIVO'))) LOOP
+    SELECT COUNT(*) INTO l_n FROM USER_TAB_COLUMNS
+     WHERE TABLE_NAME = 'POSTULANTES_FACILITADORES' AND COLUMN_NAME = c.col;
+    DBMS_OUTPUT.PUT_LINE(CASE WHEN l_n > 0 THEN '[OK]   ' ELSE '[ERROR] Falta ' END
+                         || 'columna POSTULANTES_FACILITADORES.' || c.col);
+  END LOOP;
+
+  -- Quien la cargo desde la app (sea o no facilitador). NULL en las del JV26.
+  agregar('USUARIO', 'Usuario (login, en mayúsculas) que cargó la postulación desde la app facilitadores. Identifica a los postulantes que no son facilitadores. Nulo en las del formulario JV26.',
+          'VARCHAR2(255 CHAR)');
+
+  -- Una por usuario y año. Las filas sin USUARIO (JV26) no entran en el indice.
+  SELECT COUNT(*) INTO l_n FROM USER_INDEXES WHERE INDEX_NAME = 'UX_POSTULANTES_FAC_USUARIO_ANIO';
+  IF l_n = 0 THEN
+    EXECUTE IMMEDIATE 'CREATE UNIQUE INDEX UX_POSTULANTES_FAC_USUARIO_ANIO ON POSTULANTES_FACILITADORES '
+                      || '(CASE WHEN USUARIO IS NOT NULL THEN USUARIO END, '
+                      || ' CASE WHEN USUARIO IS NOT NULL THEN ID_ANIO END)';
+    DBMS_OUTPUT.PUT_LINE('[OK]   Indice UX_POSTULANTES_FAC_USUARIO_ANIO creado (una por usuario y año).');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[OK]   Indice UX_POSTULANTES_FAC_USUARIO_ANIO ya existia.');
+  END IF;
+
+  -- Tabla SOLO de la app: los nombres (public_id) de Cloudinary que el servidor
+  -- le dio a cada usuario al firmar una subida. Solo se puede borrar un archivo
+  -- anotado a nombre de quien lo pide.
+  SELECT COUNT(*) INTO l_n FROM USER_TABLES WHERE TABLE_NAME = 'POSTULANTES_FAC_ARCHIVOS';
+  IF l_n = 0 THEN
+    EXECUTE IMMEDIATE q'[
+      CREATE TABLE POSTULANTES_FAC_ARCHIVOS (
+        ID         NUMBER GENERATED BY DEFAULT ON NULL AS IDENTITY PRIMARY KEY,
+        USUARIO    VARCHAR2(255 CHAR) NOT NULL,
+        PUBLIC_ID  VARCHAR2(200 CHAR) NOT NULL,
+        FECHA      DATE DEFAULT SYSDATE NOT NULL,
+        CONSTRAINT UX_POSTULANTES_FAC_ARCH_PID UNIQUE (PUBLIC_ID)
+      )]';
+    EXECUTE IMMEDIATE 'CREATE INDEX IDX_POSTULANTES_FAC_ARCH_USU ON POSTULANTES_FAC_ARCHIVOS (USUARIO)';
+    EXECUTE IMMEDIATE q'[COMMENT ON TABLE POSTULANTES_FAC_ARCHIVOS IS 'App facilitadores: documentos de postulación subidos a Cloudinary (public_id) y el usuario que los subió. Solo ese usuario puede borrarlos desde la app.']';
+    DBMS_OUTPUT.PUT_LINE('[OK]   Tabla POSTULANTES_FAC_ARCHIVOS creada.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[OK]   Tabla POSTULANTES_FAC_ARCHIVOS ya existia.');
+  END IF;
+
+  -- Tabla SOLO de la app: la postulacion guardada SIN TERMINAR (ningun campo es
+  -- obligatorio para guardar; Jose, 24/11/2026). Una por usuario y año, con lo
+  -- cargado como JSON. Al enviarla completa pasa a POSTULANTES_FACILITADORES y
+  -- el borrador se borra. Asi la tabla del JV26 no recibe filas incompletas.
+  SELECT COUNT(*) INTO l_n FROM USER_TABLES WHERE TABLE_NAME = 'POSTULANTES_FAC_BORRADORES';
+  IF l_n = 0 THEN
+    EXECUTE IMMEDIATE q'[
+      CREATE TABLE POSTULANTES_FAC_BORRADORES (
+        ID             NUMBER GENERATED BY DEFAULT ON NULL AS IDENTITY PRIMARY KEY,
+        USUARIO        VARCHAR2(255 CHAR) NOT NULL,
+        ID_ANIO        NUMBER NOT NULL,
+        ID_FACILITADOR NUMBER,
+        DATOS          CLOB NOT NULL,
+        PASO           NUMBER(3),
+        FECHA          DATE DEFAULT SYSDATE NOT NULL,
+        CONSTRAINT UX_POSTULANTES_FAC_BORR UNIQUE (USUARIO, ID_ANIO),
+        CONSTRAINT CK_POSTULANTES_FAC_BORR_JSON CHECK (DATOS IS JSON)
+      )]';
+    EXECUTE IMMEDIATE q'[COMMENT ON TABLE POSTULANTES_FAC_BORRADORES IS 'App facilitadores: postulación guardada sin terminar (JSON con los datos del formulario), una por usuario y año. Al enviarla completa pasa a POSTULANTES_FACILITADORES.']';
+    DBMS_OUTPUT.PUT_LINE('[OK]   Tabla POSTULANTES_FAC_BORRADORES creada.');
+  ELSE
+    DBMS_OUTPUT.PUT_LINE('[OK]   Tabla POSTULANTES_FAC_BORRADORES ya existia.');
+  END IF;
+END;
+/
 
 DECLARE
   l_n PLS_INTEGER;
@@ -146,6 +328,21 @@ CREATE OR REPLACE PACKAGE PKG_POSTULACION_APP_ETHOS AS
   -- p_body: el JSON del pedido (:body_text). Alta o correccion de la del año.
   PROCEDURE guardar(p_token IN VARCHAR2, p_body IN CLOB);
 
+  -- Firma para subir un documento a Cloudinary (preset fcfacilitadores).
+  PROCEDURE firma_documento(p_token IN VARCHAR2);
+
+  -- Borra de Cloudinary un documento que el usuario quito o reemplazo.
+  PROCEDURE quitar_documento(p_token IN VARCHAR2, p_url IN VARCHAR2);
+
+  -- Elimina SU postulacion del año abierto (y sus documentos de Cloudinary).
+  PROCEDURE eliminar(p_token IN VARCHAR2);
+
+  -- Guarda SIN TERMINAR (sin validar): { paso, datos: '<JSON del formulario>' }.
+  PROCEDURE guardar_borrador(p_token IN VARCHAR2, p_body IN CLOB);
+
+  -- Descarta lo guardado sin terminar (y sus documentos de Cloudinary).
+  PROCEDURE descartar_borrador(p_token IN VARCHAR2);
+
 END PKG_POSTULACION_APP_ETHOS;
 /
 
@@ -157,6 +354,20 @@ c_dias         CONSTANT VARCHAR2(60) := 'LUNES,MARTES,MIERCOLES,JUEVES,VIERNES';
 c_edad_minima  CONSTANT PLS_INTEGER  := 16;
 c_edad_maxima  CONSTANT PLS_INTEGER  := 99;
 c_largo_areas  CONSTANT PLS_INTEGER  := 4000;
+c_largo_url    CONSTANT PLS_INTEGER  := 500;
+-- Cloudinary: preset Signed de las postulaciones y su carpeta.
+c_preset_docs  CONSTANT VARCHAR2(60) := 'fcfacilitadores';
+c_carpeta_docs CONSTANT VARCHAR2(60) := 'postulaciones-facilitadores';
+
+-- Nombres posibles del secreto en CLOUDINARY_CONFIG (PKG_CLOUDINARY_ETHOS.config).
+TYPE t_claves IS TABLE OF VARCHAR2(30);
+c_claves_secreto CONSTANT t_claves := t_claves('api_secret', 'API_SECRET', 'secreto', 'SECRETO', 'secret', 'SECRET');
+-- Las claves de los documentos en el JSON del formulario (borrador).
+c_claves_doc CONSTANT t_claves := t_claves(
+    'foto_url', 'cedula_frente_url', 'cedula_dorso_url', 'secundario_doc_url', 'tecnico_doc_url',
+    'licenciatura_doc_url', 'posgrado_doc_url', 'cv_archivo', 'certificado_no_agresor_archivo',
+    'antecedente_judicial_archivo', 'antecedente_policial_archivo');
+c_largo_borrador CONSTANT PLS_INTEGER := 200000;
 
 -- Un dato invalido: falla() deja el campo y el mensaje y la lanza.
 e_dato    EXCEPTION;
@@ -185,6 +396,15 @@ BEGIN
     APEX_JSON.CLOSE_OBJECT;
 END p_error;
 
+-- Como p_error, pero con HTP.P directo: para cuando la salida de APEX_JSON
+-- se uso hacia un CLOB (firma_documento).
+PROCEDURE error_htp(p_status IN NUMBER, p_reason IN VARCHAR2, p_message IN VARCHAR2) IS
+BEGIN
+    OWA_UTIL.STATUS_LINE(p_status, p_reason, FALSE);
+    abrir_json;
+    HTP.P('{"success":false,"message":' || APEX_JSON.STRINGIFY(p_message) || '}');
+END error_htp;
+
 PROCEDURE falla(p_campo IN VARCHAR2, p_mensaje IN VARCHAR2) IS
 BEGIN
     g_campo   := p_campo;
@@ -209,28 +429,24 @@ EXCEPTION
 END f_numero;
 
 ------------------------------------------------------------------------------
--- Contexto del token: su ID_FACILITADOR. Escribe el error y devuelve FALSE si
--- el token no sirve (401) o si se pide ser facilitador y no lo es (403).
+-- Contexto del token: su usuario (o_usuario, en mayusculas) y su
+-- ID_FACILITADOR (NULL si no es facilitador: igual se puede postular).
+-- Escribe el error y devuelve FALSE si el token no sirve (401).
 ------------------------------------------------------------------------------
-FUNCTION contexto(p_token IN VARCHAR2, p_exigir_facilitador IN BOOLEAN,
+FUNCTION contexto(p_token IN VARCHAR2, o_usuario OUT VARCHAR2,
                   o_id_facilitador OUT NUMBER) RETURN BOOLEAN IS
-    l_usuario VARCHAR2(255);
 BEGIN
-    l_usuario := PKG_AUTH_ETHOS.validar_token(p_token);
-    IF l_usuario IS NULL THEN
+    o_usuario := UPPER(TRIM(PKG_AUTH_ETHOS.validar_token(p_token)));
+    IF o_usuario IS NULL THEN
         p_error(401, 'Unauthorized', 'Token invalido o expirado');
         RETURN FALSE;
     END IF;
     BEGIN
         SELECT ID_FACILITADOR INTO o_id_facilitador FROM FACILITADORES
-         WHERE UPPER(TRIM(USUARIO)) = UPPER(TRIM(l_usuario));
+         WHERE UPPER(TRIM(USUARIO)) = o_usuario;
     EXCEPTION
         WHEN OTHERS THEN o_id_facilitador := NULL;
     END;
-    IF p_exigir_facilitador AND o_id_facilitador IS NULL THEN
-        p_error(403, 'Forbidden', 'Tu usuario no es un facilitador');
-        RETURN FALSE;
-    END IF;
     RETURN TRUE;
 END contexto;
 
@@ -318,9 +534,139 @@ BEGIN
     END IF;
 END estudio;
 
+-- Enlace de un documento subido a Cloudinary. NULL si no corresponde pedirlo;
+-- si corresponde, es obligatorio y tiene que ser de nuestro cloud.
+FUNCTION documento(p_campo IN VARCHAR2, p_etiqueta IN VARCHAR2, p_requerido IN BOOLEAN) RETURN VARCHAR2 IS
+    l_v VARCHAR2(32767);
+BEGIN
+    IF NOT p_requerido THEN RETURN NULL; END IF;
+    l_v := TRIM(APEX_JSON.GET_VARCHAR2(p_path => p_campo));
+    IF l_v IS NULL THEN
+        falla(p_campo, 'Falta subir: ' || p_etiqueta);
+    END IF;
+    IF LENGTH(l_v) > c_largo_url OR NOT PKG_CLOUDINARY_ETHOS.es_url_propia(l_v) THEN
+        falla(p_campo, p_etiqueta || ': el archivo no es valido, volve a subirlo');
+    END IF;
+    RETURN l_v;
+END documento;
+
+-- Concluido o cursando: se pide el titulo o la constancia de ese nivel.
+-- Si se puede cargar y modificar la postulacion de ese año: lo decide
+-- FN_POSTULACION_ABIERTA (PERIODOS_POSTULACION: rango de fechas o habilitacion
+-- extraordinaria; Jose, 24/11/2026). Sin periodo cargado, cerrada.
+FUNCTION periodo_abierto(p_id_anio IN NUMBER) RETURN BOOLEAN IS
+BEGIN
+    RETURN p_id_anio IS NOT NULL AND NVL(FN_POSTULACION_ABIERTA(p_id_anio), 'NO') = 'SI';
+EXCEPTION
+    WHEN OTHERS THEN RETURN FALSE;
+END periodo_abierto;
+
+FUNCTION pide_doc(p_estado IN VARCHAR2) RETURN BOOLEAN IS
+BEGIN
+    RETURN p_estado IN ('CONCLUIDO', 'CONCLUIDA', 'CURSANDO');
+END pide_doc;
+
+/* -------------------------------------------------------------------------- */
+/* Cloudinary                                                                 */
+/* -------------------------------------------------------------------------- */
+
+-- El secreto de CLOUDINARY_CONFIG, o NULL si no se encuentra con ningun nombre.
+FUNCTION secreto RETURN VARCHAR2 IS
+    l_v VARCHAR2(4000);
+BEGIN
+    FOR i IN 1 .. c_claves_secreto.COUNT LOOP
+        l_v := PKG_CLOUDINARY_ETHOS.config(c_claves_secreto(i));
+        IF l_v IS NOT NULL THEN RETURN l_v; END IF;
+    END LOOP;
+    RETURN NULL;
+END secreto;
+
+-- Borra de Cloudinary un documento reemplazado, si ya no lo usa ninguna
+-- postulacion. Nunca lanza: se llama despues del COMMIT. La llamada es
+-- dinamica para que el paquete compile aunque PKG_CLOUDINARY_ETHOS no tenga
+-- BORRAR (la version vieja del sitio); en ese caso el archivo queda.
+-- Si alguna postulacion (de quien sea) usa ese enlace.
+FUNCTION en_uso(p_url IN VARCHAR2) RETURN BOOLEAN IS
+    l_n PLS_INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO l_n FROM POSTULANTES_FACILITADORES
+     WHERE p_url IN (FOTO_URL, CEDULA_FRENTE_URL, CEDULA_DORSO_URL, SECUNDARIO_DOC_URL,
+                     TECNICO_DOC_URL, LICENCIATURA_DOC_URL, POSGRADO_DOC_URL,
+                     CV_ARCHIVO, CERTIFICADO_NO_AGRESOR_ARCHIVO,
+                     ANTECEDENTE_JUDICIAL_ARCHIVO, ANTECEDENTE_POLICIAL_ARCHIVO);
+    RETURN l_n > 0;
+END en_uso;
+
+-- PKG_CLOUDINARY_ETHOS.borrar: NULL si quedo borrado; si no, el motivo. La
+-- llamada es dinamica para que el paquete compile aunque no exista BORRAR
+-- (la version vieja del sitio). Nunca lanza. Si se borro, saca su registro
+-- de POSTULANTES_FAC_ARCHIVOS.
+FUNCTION borrar_archivo(p_url IN VARCHAR2) RETURN VARCHAR2 IS
+    l_r VARCHAR2(4000);
+BEGIN
+    BEGIN
+        EXECUTE IMMEDIATE 'BEGIN :r := PKG_CLOUDINARY_ETHOS.borrar(:u); END;' USING OUT l_r, IN p_url;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RETURN 'PKG_CLOUDINARY_ETHOS no tiene BORRAR (falta correr el cloudinary.sql nuevo del sitio)';
+    END;
+    IF l_r IS NULL THEN
+        DELETE FROM POSTULANTES_FAC_ARCHIVOS
+         WHERE INSTR(p_url, '/' || PUBLIC_ID || '.') > 0;
+        COMMIT;
+    END IF;
+    RETURN l_r;
+EXCEPTION
+    WHEN OTHERS THEN RETURN SQLERRM;
+END borrar_archivo;
+
+-- Borra de Cloudinary un documento reemplazado, si ya no lo usa ninguna
+-- postulacion. Nunca lanza: se llama despues del COMMIT. Sin BORRAR en
+-- PKG_CLOUDINARY_ETHOS el archivo queda.
+PROCEDURE limpiar(p_url IN VARCHAR2) IS
+    l_r VARCHAR2(4000);
+BEGIN
+    IF p_url IS NULL OR en_uso(p_url) THEN RETURN; END IF;
+    l_r := borrar_archivo(p_url);
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END limpiar;
+
+-- Borra de Cloudinary los documentos de un borrador descartado que ninguna
+-- postulacion guardada use. Nunca lanza.
+PROCEDURE limpiar_borrador(p_datos IN CLOB) IS
+    l_vals APEX_JSON.T_VALUES;
+BEGIN
+    IF p_datos IS NULL THEN RETURN; END IF;
+    APEX_JSON.PARSE(p_values => l_vals, p_source => p_datos);
+    FOR i IN 1 .. c_claves_doc.COUNT LOOP
+        limpiar(TRIM(APEX_JSON.GET_VARCHAR2(p_path => c_claves_doc(i), p_values => l_vals)));
+    END LOOP;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END limpiar_borrador;
+
 /* -------------------------------------------------------------------------- */
 /* GET mi-postulacion                                                         */
 /* -------------------------------------------------------------------------- */
+
+-- FACILITADORES."DENOMINACIÓN" lleva tilde en el nombre de la columna: se busca en el
+-- diccionario y se lee con SQL dinamico, asi el script no depende de como se guarde la
+-- tilde al subirlo. NULL si no esta o falla.
+FUNCTION denominacion(p_fac IN NUMBER) RETURN VARCHAR2 IS
+    l_col VARCHAR2(128);
+    l_v   VARCHAR2(4000);
+BEGIN
+    IF p_fac IS NULL THEN RETURN NULL; END IF;
+    SELECT MIN(COLUMN_NAME) INTO l_col FROM USER_TAB_COLUMNS
+     WHERE TABLE_NAME = 'FACILITADORES' AND COLUMN_NAME LIKE 'DENOMINACI%';
+    IF l_col IS NULL THEN RETURN NULL; END IF;
+    EXECUTE IMMEDIATE 'SELECT "' || l_col || '" FROM FACILITADORES WHERE ID_FACILITADOR = :1'
+       INTO l_v USING p_fac;
+    RETURN l_v;
+EXCEPTION
+    WHEN OTHERS THEN RETURN NULL;
+END denominacion;
 
 PROCEDURE w(p_nombre IN VARCHAR2, p_valor IN VARCHAR2) IS
 BEGIN
@@ -404,6 +750,17 @@ BEGIN
     w('factura_tipo', p.FACTURA_TIPO);
     w('factura_emisor', p.FACTURA_EMISOR);
     w('ruc', p.RUC);
+    w('foto_url', p.FOTO_URL);
+    w('cedula_frente_url', p.CEDULA_FRENTE_URL);
+    w('cedula_dorso_url', p.CEDULA_DORSO_URL);
+    w('secundario_doc_url', p.SECUNDARIO_DOC_URL);
+    w('tecnico_doc_url', p.TECNICO_DOC_URL);
+    w('licenciatura_doc_url', p.LICENCIATURA_DOC_URL);
+    w('posgrado_doc_url', p.POSGRADO_DOC_URL);
+    w('cv_archivo', p.CV_ARCHIVO);
+    w('certificado_no_agresor_archivo', p.CERTIFICADO_NO_AGRESOR_ARCHIVO);
+    w('antecedente_judicial_archivo', p.ANTECEDENTE_JUDICIAL_ARCHIVO);
+    w('antecedente_policial_archivo', p.ANTECEDENTE_POLICIAL_ARCHIVO);
     APEX_JSON.CLOSE_OBJECT;
 END escribir;
 
@@ -415,50 +772,118 @@ PROCEDURE mi_postulacion(p_token IN VARCHAR2) IS
     l_anterior POSTULANTES_FACILITADORES%ROWTYPE;
     l_hay_act  BOOLEAN := FALSE;
     l_hay_ant  BOOLEAN := FALSE;
+    l_usuario  VARCHAR2(255);
+    l_proceso  CLOB;
 BEGIN
-    IF NOT contexto(p_token, FALSE, l_fac) THEN RETURN; END IF;
+    IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
     anio_abierto(l_id_anio, l_anio);
 
-    -- Solo SUS postulaciones (ID_FACILITADOR del token).
-    IF l_fac IS NOT NULL THEN
-        IF l_id_anio IS NOT NULL THEN
-            BEGIN
-                SELECT * INTO l_actual FROM POSTULANTES_FACILITADORES
-                 WHERE ID_FACILITADOR = l_fac AND ID_ANIO = l_id_anio
-                 ORDER BY ID DESC FETCH FIRST 1 ROWS ONLY;
-                l_hay_act := TRUE;
-            EXCEPTION
-                WHEN NO_DATA_FOUND THEN NULL;
-            END;
-        END IF;
+    -- Las etapas y requisitos del proceso de ese año (ANIOS_LECTIVOS.PROCESO_POSTULACION,
+    -- Jose 24/11/2026): la app los muestra al principio y pide el acuerdo para seguir.
+    FOR a IN (SELECT PROCESO_POSTULACION FROM ANIOS_LECTIVOS WHERE ID_ANIO = l_id_anio) LOOP
+        l_proceso := a.PROCESO_POSTULACION;
+    END LOOP;
+
+    -- Solo SUS postulaciones: por su ID_FACILITADOR (si es facilitador) o por
+    -- su USUARIO (las que cargo desde la app, sea o no facilitador).
+    IF l_id_anio IS NOT NULL THEN
         BEGIN
-            SELECT * INTO l_anterior FROM POSTULANTES_FACILITADORES
-             WHERE ID_FACILITADOR = l_fac AND (l_id_anio IS NULL OR ID_ANIO <> l_id_anio)
-             ORDER BY FECHA_REGISTRO DESC, ID DESC FETCH FIRST 1 ROWS ONLY;
-            l_hay_ant := TRUE;
+            SELECT * INTO l_actual FROM POSTULANTES_FACILITADORES
+             WHERE (ID_FACILITADOR = l_fac OR USUARIO = l_usuario) AND ID_ANIO = l_id_anio
+             ORDER BY CASE WHEN USUARIO = l_usuario THEN 0 ELSE 1 END, ID DESC
+             FETCH FIRST 1 ROWS ONLY;
+            l_hay_act := TRUE;
         EXCEPTION
             WHEN NO_DATA_FOUND THEN NULL;
         END;
     END IF;
+    BEGIN
+        SELECT * INTO l_anterior FROM POSTULANTES_FACILITADORES
+         WHERE (ID_FACILITADOR = l_fac OR USUARIO = l_usuario)
+           AND (l_id_anio IS NULL OR ID_ANIO <> l_id_anio)
+         ORDER BY FECHA_REGISTRO DESC, ID DESC FETCH FIRST 1 ROWS ONLY;
+        l_hay_ant := TRUE;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN NULL;
+    END;
 
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
     APEX_JSON.WRITE('es_facilitador', l_fac IS NOT NULL);
     w('anio', l_anio);
-    APEX_JSON.WRITE('abierta', l_id_anio IS NOT NULL);
+    -- anio_registrado: el año lectivo actual esta en ANIOS_LECTIVOS. abierta: el
+    -- periodo de postulacion permite cargar y modificar (FN_POSTULACION_ABIERTA).
+    APEX_JSON.WRITE('anio_registrado', l_id_anio IS NOT NULL);
+    APEX_JSON.WRITE('abierta', periodo_abierto(l_id_anio));
+    FOR pp IN (SELECT TO_CHAR(FECHA_INICIO, 'YYYY-MM-DD') AS inicio, TO_CHAR(FECHA_FIN, 'YYYY-MM-DD') AS fin,
+                      HABILITACION_EXTRAORDINARIA AS extra
+                 FROM PERIODOS_POSTULACION WHERE ID_ANIO = l_id_anio) LOOP
+        APEX_JSON.OPEN_OBJECT('periodo');
+        w('fecha_inicio', pp.inicio);
+        w('fecha_fin', pp.fin);
+        APEX_JSON.WRITE('extraordinaria', pp.extra = 'SI');
+        APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
+    -- Texto (o HTML del editor de APEX) del proceso; null si no esta cargado.
+    APEX_JSON.WRITE('proceso', l_proceso, p_write_null => TRUE);
 
+    -- Sus datos de FACILITADORES (solo SU fila, por el ID del token), para precargar el
+    -- formulario si ya es facilitador (Jose, 24/11/2026). Van como estan: la app los lleva a
+    -- los codigos de la postulacion (SI/NO, SOLTERO, VIRTUAL...).
     APEX_JSON.OPEN_OBJECT('facilitador');
-    FOR f IN (SELECT NOMBRE_APELLIDO, TELEFONO, TO_CHAR(FECHA_NACIMIENTO, 'YYYY-MM-DD') AS nacimiento
-                FROM FACILITADORES WHERE ID_FACILITADOR = l_fac) LOOP
+    FOR f IN (SELECT * FROM FACILITADORES WHERE ID_FACILITADOR = l_fac) LOOP
         w('nombre', f.NOMBRE_APELLIDO);
+        w('cedula', f.NRO_CI);
+        w('fecha_nacimiento', TO_CHAR(f.FECHA_NACIMIENTO, 'YYYY-MM-DD'));
+        w('estado_civil', f.ESTADO_CIVIL);
+        w('con_quien_vive', f.CON_QUIEN_VIVE);
+        w('hijos', f.HIJOS);
         w('telefono', f.TELEFONO);
-        w('fecha_nacimiento', f.nacimiento);
+        w('email', f.EMAIL);
+        APEX_JSON.WRITE('id_pais', f.ID_PAIS);
+        APEX_JSON.WRITE('id_departamento', f.ID_DEPARTAMENTO);
+        APEX_JSON.WRITE('id_ciudad', f.ID_CIUDAD);
+        w('direccion', f.DIRECCION);
+        w('ubicacion', f.UBICACION);
+        w('vehiculo', f.VEHICULO);
+        w('tipo_vehiculo', f.TIPO_VEHICULO);
+        w('computadora', f.COMPUTADORA);
+        w('internet', f.INTERNET);
+        w('office', f.OFFICE);
+        w('denominacion', denominacion(l_fac));
+        w('nombre_iglesia', f.NOMBRE_IGLESIA);
+        w('nombre_pastor', f.NOMBRE_PASTOR);
+        w('telefono_pastor', f.NRO_TELEFONO_PASTOR);
+        w('nombre_lider', f.NOMBRE_LIDER);
+        w('telefono_lider', f.NRO_TELEFONO_LIDER);
+        w('bautizado_agua', f.BAUTIZADO_AGUA);
+        w('area_servicio', f.AREA_SERVICIO);
+        w('banco', f.NOMBRE_BANCO);
+        w('sucursal', f.SUCURSAL_BANCO);
+        w('titular', f.TITULAR_BANCO);
+        w('titular_ci', f.NRO_CI_TITULAR_BANCO);
+        w('tipo_cuenta', f.TIPO_CUENTA);
+        w('numero_cuenta', f.NRO_CUENTA);
+        w('emisor', f.NOMBRE_EMISOR);
+        w('ruc', f.RUC);
+        w('tipo_factura', f.TIPO_FACTURA);
     END LOOP;
     APEX_JSON.CLOSE_OBJECT;
 
     IF l_hay_act THEN escribir('postulacion', l_actual); END IF;
     IF l_hay_ant THEN escribir('anterior', l_anterior); END IF;
+    -- Lo guardado sin terminar este año (solo el de SU usuario): datos va como
+    -- texto JSON, la app lo lee.
+    FOR b IN (SELECT DATOS, PASO, TO_CHAR(FECHA, 'YYYY-MM-DD"T"HH24:MI') AS fecha
+                FROM POSTULANTES_FAC_BORRADORES
+               WHERE USUARIO = l_usuario AND ID_ANIO = l_id_anio) LOOP
+        APEX_JSON.OPEN_OBJECT('borrador');
+        APEX_JSON.WRITE('paso', b.PASO);
+        w('fecha', b.fecha);
+        APEX_JSON.WRITE('datos', b.DATOS);
+        APEX_JSON.CLOSE_OBJECT;
+    END LOOP;
     APEX_JSON.CLOSE_OBJECT;
 EXCEPTION
     WHEN OTHERS THEN p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
@@ -469,10 +894,11 @@ END mi_postulacion;
 /* -------------------------------------------------------------------------- */
 
 PROCEDURE lugares(p_token IN VARCHAR2, p_id_pais IN VARCHAR2) IS
-    l_fac  NUMBER;
-    l_pais NUMBER := NVL(f_numero(p_id_pais), c_pais_defecto);
+    l_fac     NUMBER;
+    l_usuario VARCHAR2(255);
+    l_pais    NUMBER := NVL(f_numero(p_id_pais), c_pais_defecto);
 BEGIN
-    IF NOT contexto(p_token, TRUE, l_fac) THEN RETURN; END IF;
+    IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
 
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
@@ -515,12 +941,17 @@ PROCEDURE guardar(p_token IN VARCHAR2, p_body IN CLOB) IS
     l_dia     VARCHAR2(4000);
     l_elegido VARCHAR2(4000) := ',';
     r         POSTULANTES_FACILITADORES%ROWTYPE;
+    l_viejo   POSTULANTES_FACILITADORES%ROWTYPE;
+    l_usuario VARCHAR2(255);
 BEGIN
-    IF NOT contexto(p_token, TRUE, l_fac) THEN RETURN; END IF;
+    IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
 
     anio_abierto(l_id_anio, l_anio);
     IF l_id_anio IS NULL THEN
         p_error(409, 'Conflict', 'No hay un año lectivo abierto para postularse'); RETURN;
+    END IF;
+    IF NOT periodo_abierto(l_id_anio) THEN
+        p_error(409, 'Conflict', 'El periodo de postulacion esta cerrado: ya no se pueden cargar ni modificar postulaciones'); RETURN;
     END IF;
 
     BEGIN
@@ -657,13 +1088,37 @@ BEGIN
         falla('ruc', 'El RUC va como 1234567-8');
     END IF;
 
-    -- Una por facilitador y año: la fila del facilitador bloqueada hasta el
-    -- COMMIT, asi dos envios a la vez no crean dos postulaciones.
-    SELECT ID_FACILITADOR INTO l_fac FROM FACILITADORES WHERE ID_FACILITADOR = l_fac FOR UPDATE;
-    SELECT MAX(ID) INTO l_id FROM POSTULANTES_FACILITADORES
-     WHERE ID_FACILITADOR = l_fac AND ID_ANIO = l_id_anio;
+    -- 9. Documentos (enlaces de Cloudinary), segun los estudios.
+    r.FOTO_URL             := documento('foto_url', 'foto tipo carnet', TRUE);
+    r.CEDULA_FRENTE_URL    := documento('cedula_frente_url', 'cedula, frente', TRUE);
+    r.CEDULA_DORSO_URL     := documento('cedula_dorso_url', 'cedula, dorso', TRUE);
+    r.SECUNDARIO_DOC_URL   := documento('secundario_doc_url', 'titulo de bachiller', pide_doc(r.SECUNDARIO_ESTADO));
+    r.TECNICO_DOC_URL      := documento('tecnico_doc_url', 'titulo o constancia del tecnico superior', pide_doc(r.TECNICO_ESTADO));
+    r.LICENCIATURA_DOC_URL := documento('licenciatura_doc_url', 'titulo o constancia de la licenciatura', pide_doc(r.LICENCIATURA_ESTADO));
+    r.POSGRADO_DOC_URL     := documento('posgrado_doc_url', 'titulo o constancia del posgrado', pide_doc(r.POSGRADO_ESTADO));
+    r.CV_ARCHIVO                     := documento('cv_archivo', 'curriculum (CV)', TRUE);
+    r.CERTIFICADO_NO_AGRESOR_ARCHIVO := documento('certificado_no_agresor_archivo', 'certificado de no agresor', TRUE);
+    r.ANTECEDENTE_JUDICIAL_ARCHIVO   := documento('antecedente_judicial_archivo', 'antecedentes judiciales', TRUE);
+    r.ANTECEDENTE_POLICIAL_ARCHIVO   := documento('antecedente_policial_archivo', 'antecedentes policiales', TRUE);
+
+    -- Una por usuario y año. Si es facilitador, su fila de FACILITADORES queda
+    -- bloqueada hasta el COMMIT; para todos, el indice unico
+    -- UX_POSTULANTES_FAC_USUARIO_ANIO frena un segundo alta a la vez (409).
+    IF l_fac IS NOT NULL THEN
+        SELECT ID_FACILITADOR INTO l_fac FROM FACILITADORES WHERE ID_FACILITADOR = l_fac FOR UPDATE;
+    END IF;
+    -- La suya del año: primero la que ya tiene su USUARIO.
+    BEGIN
+        SELECT ID INTO l_id FROM POSTULANTES_FACILITADORES
+         WHERE (ID_FACILITADOR = l_fac OR USUARIO = l_usuario) AND ID_ANIO = l_id_anio
+         ORDER BY CASE WHEN USUARIO = l_usuario THEN 0 ELSE 1 END, ID DESC
+         FETCH FIRST 1 ROWS ONLY;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN l_id := NULL;
+    END;
 
     r.ID_FACILITADOR := l_fac;
+    r.USUARIO        := l_usuario;
     r.ID_ANIO        := l_id_anio;
     IF l_id IS NULL THEN
         r.ID             := NULL;
@@ -671,11 +1126,29 @@ BEGIN
         INSERT INTO POSTULANTES_FACILITADORES VALUES r RETURNING ID INTO l_id;
     ELSE
         -- Correccion: queda la fecha del primer envio.
-        SELECT FECHA_REGISTRO INTO r.FECHA_REGISTRO FROM POSTULANTES_FACILITADORES WHERE ID = l_id;
+        SELECT * INTO l_viejo FROM POSTULANTES_FACILITADORES WHERE ID = l_id;
+        r.FECHA_REGISTRO := l_viejo.FECHA_REGISTRO;
         r.ID := l_id;
         UPDATE POSTULANTES_FACILITADORES SET ROW = r WHERE ID = l_id;
     END IF;
     COMMIT;
+
+    -- Enviada completa: lo guardado sin terminar ya no hace falta.
+    DELETE FROM POSTULANTES_FAC_BORRADORES WHERE USUARIO = l_usuario AND ID_ANIO = l_id_anio;
+    COMMIT;
+
+    -- Despues del COMMIT: los documentos reemplazados se borran de Cloudinary.
+    limpiar(l_viejo.FOTO_URL);
+    limpiar(l_viejo.CEDULA_FRENTE_URL);
+    limpiar(l_viejo.CEDULA_DORSO_URL);
+    limpiar(l_viejo.SECUNDARIO_DOC_URL);
+    limpiar(l_viejo.TECNICO_DOC_URL);
+    limpiar(l_viejo.LICENCIATURA_DOC_URL);
+    limpiar(l_viejo.POSGRADO_DOC_URL);
+    limpiar(l_viejo.CV_ARCHIVO);
+    limpiar(l_viejo.CERTIFICADO_NO_AGRESOR_ARCHIVO);
+    limpiar(l_viejo.ANTECEDENTE_JUDICIAL_ARCHIVO);
+    limpiar(l_viejo.ANTECEDENTE_POLICIAL_ARCHIVO);
 
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
@@ -688,6 +1161,9 @@ EXCEPTION
     WHEN e_dato THEN
         ROLLBACK;
         p_error(400, 'Bad Request', g_mensaje, g_campo);
+    WHEN DUP_VAL_ON_INDEX THEN
+        ROLLBACK;
+        p_error(409, 'Conflict', 'Tu postulacion de este año ya se esta guardando. Actualiza la pantalla y corregila desde ahi.');
     WHEN OTHERS THEN
         ROLLBACK;
         IF SQLCODE = -2290 THEN
@@ -698,6 +1174,316 @@ EXCEPTION
             p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
         END IF;
 END guardar;
+
+/* -------------------------------------------------------------------------- */
+/* POST mi-postulacion/firma-documento                                        */
+/* -------------------------------------------------------------------------- */
+
+-- Misma forma que mis-facturas/firma-foto, pero con el preset de las
+-- postulaciones. El cloud y el api_key se toman de lo que escribe
+-- PKG_CLOUDINARY_ETHOS.escribir_firma (asi no dependemos de como se llaman en
+-- CLOUDINARY_CONFIG); la firma se rehace aca con el secreto:
+--   SHA-1( 'asset_folder=..&public_id=..&timestamp=..&upload_preset=..' || secreto )
+-- El public_id (nombre del archivo en Cloudinary) lo elige el servidor, al
+-- azar, y lo anota a nombre del usuario en POSTULANTES_FAC_ARCHIVOS: asi solo
+-- ese usuario puede borrarlo despues (quitar_documento).
+PROCEDURE firma_documento(p_token IN VARCHAR2) IS
+    l_pid     VARCHAR2(200);
+    l_fecha   DATE;
+    l_fac     NUMBER;
+    l_id_anio NUMBER;
+    l_anio    VARCHAR2(40);
+    l_falta   VARCHAR2(400);
+    l_base    CLOB;
+    l_vals    APEX_JSON.T_VALUES;
+    l_cloud   VARCHAR2(400);
+    l_key     VARCHAR2(400);
+    l_secreto VARCHAR2(4000);
+    l_ts      VARCHAR2(20);
+    l_cadena  VARCHAR2(4000);
+    l_firma   VARCHAR2(100);
+    l_usuario VARCHAR2(255);
+BEGIN
+    IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
+    anio_abierto(l_id_anio, l_anio);
+    IF l_id_anio IS NULL THEN
+        p_error(409, 'Conflict', 'No hay un año lectivo abierto para postularse'); RETURN;
+    END IF;
+    IF NOT periodo_abierto(l_id_anio) THEN
+        p_error(409, 'Conflict', 'El periodo de postulacion esta cerrado: ya no se pueden cargar ni modificar postulaciones'); RETURN;
+    END IF;
+    l_falta := PKG_CLOUDINARY_ETHOS.falta;
+    IF l_falta IS NOT NULL THEN
+        p_error(503, 'Service Unavailable', 'Todavia no se pueden subir documentos: ' || l_falta); RETURN;
+    END IF;
+    l_secreto := secreto;
+    IF l_secreto IS NULL THEN
+        p_error(503, 'Service Unavailable', 'Todavia no se pueden subir documentos: no se encontro el secreto de Cloudinary'); RETURN;
+    END IF;
+
+    -- Lo que firma PKG_CLOUDINARY_ETHOS, a un CLOB (no al HTTP). OJO: despues de
+    -- FREE_OUTPUT la salida de APEX_JSON ya no llega al HTTP (la respuesta salia
+    -- vacia), asi que de aca en adelante la respuesta se escribe con HTP.P.
+    APEX_JSON.INITIALIZE_CLOB_OUTPUT;
+    BEGIN
+        APEX_JSON.OPEN_OBJECT;
+        PKG_CLOUDINARY_ETHOS.escribir_firma(c_carpeta_docs);
+        APEX_JSON.CLOSE_OBJECT;
+        l_base := APEX_JSON.GET_CLOB_OUTPUT;
+        APEX_JSON.FREE_OUTPUT;
+    EXCEPTION
+        WHEN OTHERS THEN
+            APEX_JSON.FREE_OUTPUT;
+            RAISE;
+    END;
+    APEX_JSON.PARSE(p_values => l_vals, p_source => l_base);
+    l_cloud := APEX_JSON.GET_VARCHAR2(p_path => 'cloud_name', p_values => l_vals);
+    BEGIN
+        l_key := APEX_JSON.GET_VARCHAR2(p_path => 'campos.api_key', p_values => l_vals);
+    EXCEPTION
+        WHEN OTHERS THEN
+            l_key := TO_CHAR(APEX_JSON.GET_NUMBER(p_path => 'campos.api_key', p_values => l_vals));
+    END;
+    IF l_cloud IS NULL OR l_key IS NULL THEN
+        error_htp(503, 'Service Unavailable', 'Todavia no se pueden subir documentos: falta el cloud o la clave de Cloudinary'); RETURN;
+    END IF;
+
+    -- Segundos desde 1970 (UTC), como pide Cloudinary.
+    l_ts := TO_CHAR(ROUND((CAST(SYS_EXTRACT_UTC(SYSTIMESTAMP) AS DATE) - DATE '1970-01-01') * 86400));
+    -- Parametros en orden alfabetico, sin file, cloud_name, resource_type ni api_key.
+    -- CHR(38) = '&' (asi ningun cliente SQL lo toma como variable de sustitucion).
+    l_pid := c_carpeta_docs || '/pf_' || LOWER(DBMS_RANDOM.STRING('X', 24));
+    l_cadena := 'asset_folder=' || c_carpeta_docs || CHR(38) || 'public_id=' || l_pid
+                || CHR(38) || 'timestamp=' || l_ts
+                || CHR(38) || 'upload_preset=' || c_preset_docs || l_secreto;
+    SELECT LOWER(RAWTOHEX(STANDARD_HASH(l_cadena, 'SHA1'))) INTO l_firma FROM dual;
+
+    -- ahora() es privada del paquete: no se puede llamar dentro de SQL (PLS-00231).
+    l_fecha := ahora;
+    INSERT INTO POSTULANTES_FAC_ARCHIVOS (USUARIO, PUBLIC_ID, FECHA) VALUES (l_usuario, l_pid, l_fecha);
+    COMMIT;
+
+    -- auto: acepta fotos y PDF.
+    abrir_json;
+    HTP.P('{"success":true'
+          || ',"cloud_name":' || APEX_JSON.STRINGIFY(l_cloud)
+          || ',"upload_url":' || APEX_JSON.STRINGIFY('https://api.cloudinary.com/v1_1/' || l_cloud || '/auto/upload')
+          || ',"campos":{'
+          ||   '"api_key":' || APEX_JSON.STRINGIFY(l_key)
+          ||   ',"public_id":' || APEX_JSON.STRINGIFY(l_pid)
+          ||   ',"timestamp":' || APEX_JSON.STRINGIFY(l_ts)
+          ||   ',"upload_preset":' || APEX_JSON.STRINGIFY(c_preset_docs)
+          ||   ',"asset_folder":' || APEX_JSON.STRINGIFY(c_carpeta_docs)
+          ||   ',"signature":' || APEX_JSON.STRINGIFY(l_firma)
+          || '}}');
+EXCEPTION
+    WHEN OTHERS THEN error_htp(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+END firma_documento;
+
+/* -------------------------------------------------------------------------- */
+/* DELETE mi-postulacion/documento?url=                                       */
+/* -------------------------------------------------------------------------- */
+
+-- El usuario quito o reemplazo un documento en la app.
+--   - Solo archivos que el servidor le firmo A EL (POSTULANTES_FAC_ARCHIVOS):
+--     nunca uno ajeno ni uno de otro lado (p. ej. una factura). 404 si no.
+--   - Si una postulacion guardada lo usa, no se borra ahora (borrado:false,
+--     en_uso:true): se borra al guardar la correccion que lo reemplaza.
+--   - Si no, se borra de Cloudinary (borrado:true) o se avisa por que no.
+PROCEDURE quitar_documento(p_token IN VARCHAR2, p_url IN VARCHAR2) IS
+    l_fac     NUMBER;
+    l_usuario VARCHAR2(255);
+    l_url     VARCHAR2(4000) := TRIM(p_url);
+    l_n       PLS_INTEGER;
+    l_r       VARCHAR2(4000);
+BEGIN
+    IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
+    IF l_url IS NULL OR LENGTH(l_url) > c_largo_url OR NOT PKG_CLOUDINARY_ETHOS.es_url_propia(l_url) THEN
+        p_error(400, 'Bad Request', 'El enlace del documento no es valido'); RETURN;
+    END IF;
+    SELECT COUNT(*) INTO l_n FROM POSTULANTES_FAC_ARCHIVOS
+     WHERE USUARIO = l_usuario AND INSTR(l_url, '/' || PUBLIC_ID || '.') > 0;
+    IF l_n = 0 THEN
+        p_error(404, 'Not Found', 'Ese documento no es tuyo o ya se borro'); RETURN;
+    END IF;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    IF en_uso(l_url) THEN
+        APEX_JSON.WRITE('borrado', FALSE);
+        APEX_JSON.WRITE('en_uso', TRUE);
+    ELSE
+        l_r := borrar_archivo(l_url);
+        APEX_JSON.WRITE('borrado', l_r IS NULL);
+        IF l_r IS NOT NULL THEN APEX_JSON.WRITE('aviso', l_r); END IF;
+    END IF;
+    APEX_JSON.CLOSE_OBJECT;
+EXCEPTION
+    WHEN OTHERS THEN p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+END quitar_documento;
+
+/* -------------------------------------------------------------------------- */
+/* DELETE mi-postulacion                                                      */
+/* -------------------------------------------------------------------------- */
+
+-- El usuario elimina SU postulacion del año abierto para cargarla de nuevo
+-- (Jose, 24/11/2026). La misma fila que devuelve el GET. Despues del COMMIT
+-- se borran de Cloudinary sus documentos que ninguna otra postulacion use.
+PROCEDURE eliminar(p_token IN VARCHAR2) IS
+    l_fac     NUMBER;
+    l_usuario VARCHAR2(255);
+    l_id_anio NUMBER;
+    l_anio    VARCHAR2(40);
+    p         POSTULANTES_FACILITADORES%ROWTYPE;
+    l_borrador CLOB;
+BEGIN
+    IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
+    anio_abierto(l_id_anio, l_anio);
+    IF l_id_anio IS NULL THEN
+        p_error(409, 'Conflict', 'No hay un año lectivo abierto'); RETURN;
+    END IF;
+    IF NOT periodo_abierto(l_id_anio) THEN
+        p_error(409, 'Conflict', 'El periodo de postulacion esta cerrado: ya no se pueden cargar ni modificar postulaciones'); RETURN;
+    END IF;
+    BEGIN
+        SELECT * INTO p FROM POSTULANTES_FACILITADORES
+         WHERE (ID_FACILITADOR = l_fac OR USUARIO = l_usuario) AND ID_ANIO = l_id_anio
+         ORDER BY CASE WHEN USUARIO = l_usuario THEN 0 ELSE 1 END, ID DESC
+         FETCH FIRST 1 ROWS ONLY;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN p.ID := NULL;
+    END;
+    FOR b IN (SELECT DATOS FROM POSTULANTES_FAC_BORRADORES
+               WHERE USUARIO = l_usuario AND ID_ANIO = l_id_anio) LOOP
+        l_borrador := b.DATOS;
+    END LOOP;
+    IF p.ID IS NULL AND l_borrador IS NULL THEN
+        p_error(404, 'Not Found', 'No tenes una postulacion este año'); RETURN;
+    END IF;
+
+    IF p.ID IS NOT NULL THEN
+        DELETE FROM POSTULANTES_FACILITADORES WHERE ID = p.ID;
+    END IF;
+    DELETE FROM POSTULANTES_FAC_BORRADORES WHERE USUARIO = l_usuario AND ID_ANIO = l_id_anio;
+    COMMIT;
+
+    limpiar_borrador(l_borrador);
+
+    limpiar(p.FOTO_URL);
+    limpiar(p.CEDULA_FRENTE_URL);
+    limpiar(p.CEDULA_DORSO_URL);
+    limpiar(p.SECUNDARIO_DOC_URL);
+    limpiar(p.TECNICO_DOC_URL);
+    limpiar(p.LICENCIATURA_DOC_URL);
+    limpiar(p.POSGRADO_DOC_URL);
+    limpiar(p.CV_ARCHIVO);
+    limpiar(p.CERTIFICADO_NO_AGRESOR_ARCHIVO);
+    limpiar(p.ANTECEDENTE_JUDICIAL_ARCHIVO);
+    limpiar(p.ANTECEDENTE_POLICIAL_ARCHIVO);
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('message', 'Postulacion eliminada');
+    APEX_JSON.CLOSE_OBJECT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        IF SQLCODE = -2292 THEN
+            -- Otra tabla la referencia (p. ej. la coordinacion ya la tomo).
+            p_error(409, 'Conflict', 'Tu postulacion ya esta en proceso y no se puede eliminar. Corregila o consulta con la coordinacion.');
+        ELSE
+            p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+        END IF;
+END eliminar;
+
+/* -------------------------------------------------------------------------- */
+/* PUT / DELETE mi-postulacion/borrador                                       */
+/* -------------------------------------------------------------------------- */
+
+-- Guarda lo cargado SIN validar (Jose, 24/11/2026: ningun campo es
+-- obligatorio para guardar). Cuerpo { paso, datos }: datos es el JSON del
+-- formulario como texto. Solo se controla que sea JSON y el tamaño.
+PROCEDURE guardar_borrador(p_token IN VARCHAR2, p_body IN CLOB) IS
+    l_fac     NUMBER;
+    l_usuario VARCHAR2(255);
+    l_id_anio NUMBER;
+    l_anio    VARCHAR2(40);
+    l_datos   CLOB;
+    l_paso    NUMBER;
+    l_fecha   DATE;
+    l_vals    APEX_JSON.T_VALUES;
+BEGIN
+    IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
+    anio_abierto(l_id_anio, l_anio);
+    IF l_id_anio IS NULL THEN
+        p_error(409, 'Conflict', 'No hay un año lectivo abierto para postularse'); RETURN;
+    END IF;
+    IF NOT periodo_abierto(l_id_anio) THEN
+        p_error(409, 'Conflict', 'El periodo de postulacion esta cerrado: ya no se pueden cargar ni modificar postulaciones'); RETURN;
+    END IF;
+    BEGIN
+        APEX_JSON.PARSE(p_source => p_body);
+        l_datos := APEX_JSON.GET_CLOB(p_path => 'datos');
+        l_paso  := f_numero(APEX_JSON.GET_VARCHAR2(p_path => 'paso'));
+        APEX_JSON.PARSE(p_values => l_vals, p_source => l_datos);
+    EXCEPTION
+        WHEN OTHERS THEN
+            p_error(400, 'Bad Request', 'Los datos enviados no son validos'); RETURN;
+    END;
+    IF l_datos IS NULL OR DBMS_LOB.GETLENGTH(l_datos) > c_largo_borrador THEN
+        p_error(400, 'Bad Request', 'Los datos enviados no son validos'); RETURN;
+    END IF;
+
+    -- ahora() es privada: no se puede usar dentro del MERGE (PLS-00231).
+    l_fecha := ahora;
+    MERGE INTO POSTULANTES_FAC_BORRADORES b
+    USING (SELECT l_usuario AS usuario, l_id_anio AS id_anio FROM dual) x
+       ON (b.USUARIO = x.usuario AND b.ID_ANIO = x.id_anio)
+     WHEN MATCHED THEN UPDATE SET b.DATOS = l_datos, b.PASO = l_paso,
+                                  b.ID_FACILITADOR = l_fac, b.FECHA = l_fecha
+     WHEN NOT MATCHED THEN INSERT (USUARIO, ID_ANIO, ID_FACILITADOR, DATOS, PASO, FECHA)
+                           VALUES (l_usuario, l_id_anio, l_fac, l_datos, l_paso, l_fecha);
+    COMMIT;
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.WRITE('message', 'Guardada sin terminar');
+    APEX_JSON.CLOSE_OBJECT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+END guardar_borrador;
+
+PROCEDURE descartar_borrador(p_token IN VARCHAR2) IS
+    l_fac      NUMBER;
+    l_usuario  VARCHAR2(255);
+    l_id_anio  NUMBER;
+    l_anio     VARCHAR2(40);
+    l_borrador CLOB;
+BEGIN
+    IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
+    anio_abierto(l_id_anio, l_anio);
+    FOR b IN (SELECT DATOS FROM POSTULANTES_FAC_BORRADORES
+               WHERE USUARIO = l_usuario AND ID_ANIO = l_id_anio) LOOP
+        l_borrador := b.DATOS;
+    END LOOP;
+    DELETE FROM POSTULANTES_FAC_BORRADORES WHERE USUARIO = l_usuario AND ID_ANIO = l_id_anio;
+    COMMIT;
+    limpiar_borrador(l_borrador);
+
+    abrir_json;
+    APEX_JSON.OPEN_OBJECT;
+    APEX_JSON.WRITE('success', TRUE);
+    APEX_JSON.CLOSE_OBJECT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+END descartar_borrador;
 
 END PKG_POSTULACION_APP_ETHOS;
 /
@@ -724,7 +1510,8 @@ END;
 
 DECLARE
   TYPE t_rutas IS TABLE OF VARCHAR2(100);
-  l_rutas t_rutas := t_rutas('mi-postulacion', 'mi-postulacion/lugares');
+  l_rutas t_rutas := t_rutas('mi-postulacion', 'mi-postulacion/lugares', 'mi-postulacion/firma-documento',
+                             'mi-postulacion/documento', 'mi-postulacion/borrador');
   l_modulo NUMBER;
   l_ajenos NUMBER;
 
@@ -800,8 +1587,19 @@ BEGIN
            'PKG_POSTULACION_APP_ETHOS.GUARDAR(p_token => l_token, p_body => :body_text);');
   publicar('mi-postulacion/lugares', 'GET',
            'PKG_POSTULACION_APP_ETHOS.LUGARES(p_token => l_token, p_id_pais => :id_pais);', 1);
+  publicar('mi-postulacion/firma-documento', 'POST',
+           'PKG_POSTULACION_APP_ETHOS.FIRMA_DOCUMENTO(p_token => l_token);', 1);
+  publicar('mi-postulacion', 'DELETE',
+           'PKG_POSTULACION_APP_ETHOS.ELIMINAR(p_token => l_token);');
+  publicar('mi-postulacion/borrador', 'PUT',
+           'PKG_POSTULACION_APP_ETHOS.GUARDAR_BORRADOR(p_token => l_token, p_body => :body_text);', 1);
+  publicar('mi-postulacion/borrador', 'DELETE',
+           'PKG_POSTULACION_APP_ETHOS.DESCARTAR_BORRADOR(p_token => l_token);', 1);
+  -- DELETE sin cuerpo (ORDS responde 400 a un DELETE con cuerpo): la url va en el query string.
+  publicar('mi-postulacion/documento', 'DELETE',
+           'PKG_POSTULACION_APP_ETHOS.QUITAR_DOCUMENTO(p_token => l_token, p_url => :url);', 1);
   COMMIT;
-  DBMS_OUTPUT.PUT_LINE('[OK]   Publicados los 3 endpoints de ethos/mi-postulacion.');
+  DBMS_OUTPUT.PUT_LINE('[OK]   Publicados los 8 endpoints de ethos/mi-postulacion.');
 END;
 /
 
@@ -820,7 +1618,34 @@ BEGIN
    WHERE m.NAME = 'ethos'
      AND t.URI_TEMPLATE LIKE 'mi-postulacion%'
      AND DBMS_LOB.INSTR(h.SOURCE, 'PKG_POSTULACION_APP_ETHOS') > 0;
-  DBMS_OUTPUT.PUT_LINE('[INFO] Handlers de mi-postulacion publicados: ' || l_n || ' de 3.');
+  DBMS_OUTPUT.PUT_LINE('[INFO] Handlers de mi-postulacion publicados: ' || l_n || ' de 8.');
+
+  -- Documentos: Cloudinary configurado y el secreto a mano (sin mostrarlo).
+  IF PKG_CLOUDINARY_ETHOS.falta IS NOT NULL THEN
+    DBMS_OUTPUT.PUT_LINE('[WARN] ' || PKG_CLOUDINARY_ETHOS.falta
+                         || ': mi-postulacion/firma-documento respondera 503.');
+  ELSE
+    DECLARE
+      l_hay BOOLEAN := FALSE;
+    BEGIN
+      FOR c IN (SELECT COLUMN_VALUE AS clave FROM TABLE(SYS.ODCIVARCHAR2LIST(
+                  'api_secret', 'API_SECRET', 'secreto', 'SECRETO', 'secret', 'SECRET'))) LOOP
+        IF PKG_CLOUDINARY_ETHOS.config(c.clave) IS NOT NULL THEN l_hay := TRUE; END IF;
+      END LOOP;
+      IF l_hay THEN
+        DBMS_OUTPUT.PUT_LINE('[OK]   Cloudinary configurado: los facilitadores pueden subir sus documentos (preset fcfacilitadores).');
+      ELSE
+        DBMS_OUTPUT.PUT_LINE('[WARN] No se encontro el secreto en CLOUDINARY_CONFIG con los nombres conocidos: '
+                             || 'pasale a Claude los nombres de las claves de esa tabla (sin los valores).');
+      END IF;
+    END;
+  END IF;
+
+  SELECT COUNT(*) INTO l_n FROM USER_PROCEDURES
+   WHERE OBJECT_NAME = 'PKG_CLOUDINARY_ETHOS' AND PROCEDURE_NAME = 'BORRAR';
+  IF l_n = 0 THEN
+    DBMS_OUTPUT.PUT_LINE('[WARN] PKG_CLOUDINARY_ETHOS no tiene BORRAR: un documento reemplazado queda en Cloudinary.');
+  END IF;
 
   SELECT MIN(ID_ANIO) INTO l_id_anio FROM ANIOS_LECTIVOS
    WHERE TO_CHAR(ANIO) = TO_CHAR(FN_ANIO_LECTIVO_ACTUAL());
@@ -828,8 +1653,14 @@ BEGIN
     DBMS_OUTPUT.PUT_LINE('[WARN] El año lectivo actual (' || FN_ANIO_LECTIVO_ACTUAL()
                          || ') no esta en ANIOS_LECTIVOS: la app mostrara "no hay postulacion abierta".');
   ELSE
-    DBMS_OUTPUT.PUT_LINE('[OK]   Postulacion abierta para ' || FN_ANIO_LECTIVO_ACTUAL()
+    DBMS_OUTPUT.PUT_LINE('[OK]   Año lectivo ' || FN_ANIO_LECTIVO_ACTUAL()
                          || ' (ID_ANIO ' || l_id_anio || ').');
+    IF NVL(FN_POSTULACION_ABIERTA(l_id_anio), 'NO') = 'SI' THEN
+      DBMS_OUTPUT.PUT_LINE('[OK]   Periodo de postulacion ABIERTO (FN_POSTULACION_ABIERTA = SI): se puede cargar y modificar.');
+    ELSE
+      DBMS_OUTPUT.PUT_LINE('[WARN] Periodo de postulacion CERRADO o sin cargar en PERIODOS_POSTULACION: '
+                           || 'la app muestra la postulacion pero no deja cargar ni modificar.');
+    END IF;
   END IF;
 
   SELECT COUNT(*) INTO l_n FROM DEPARTAMENTOS WHERE ID_PAIS = 1;

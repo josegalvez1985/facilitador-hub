@@ -38,17 +38,64 @@ export type Sesion = {
 };
 
 /* ---------------------------------------------------------------------------
- * La sesión vive SOLO en memoria. El token NUNCA se escribe en almacenamiento
- * persistente: cerrar la app (o recargar la PWA) vuelve al login, y es a propósito.
+ * Dónde vive la sesión.
+ * - Nativo (APK): SOLO en memoria. Cerrar la app vuelve al login.
+ * - Web / PWA (Jose, 24/11/2026): además en localStorage del sitio, para que
+ *   "Actualizar" no saque al login y varias pestañas compartan la sesión. Se borra
+ *   al cerrar sesión, al vencer el token o con un 401, y entonces se cierra en
+ *   todas las pestañas (SessionProvider escucha el evento "storage").
+ *   Un token vencido guardado no se usa.
  * ------------------------------------------------------------------------- */
-let sesionActual: Sesion | null = null;
+export const CLAVE_SESION_WEB = 'facilitadores.sesion';
+
+const almacen: Storage | null = Platform.OS === 'web' && typeof window !== 'undefined' ? (() => {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+})() : null;
+
+/** La sesión guardada en el navegador, si es válida y no venció. */
+export function sesionDeTexto(texto: string | null): Sesion | null {
+  if (!texto) return null;
+  try {
+    const s = JSON.parse(texto) as Partial<Sesion>;
+    if (!s || typeof s.token !== 'string' || !s.token || typeof s.usuario !== 'string') return null;
+    const sesion: Sesion = { token: s.token, usuario: s.usuario, nombre: String(s.nombre ?? s.usuario), email: String(s.email ?? ''), expira: String(s.expira ?? '') };
+    return (msHastaExpirar(sesion.expira) ?? 1) > 0 ? sesion : null;
+  } catch {
+    return null;
+  }
+}
+
+let sesionActual: Sesion | null = (() => {
+  const s = sesionDeTexto(almacen?.getItem(CLAVE_SESION_WEB) ?? null);
+  if (!s) almacen?.removeItem(CLAVE_SESION_WEB);
+  return s;
+})();
 
 export function getSesion(): Sesion | null {
   return sesionActual;
 }
 
+function guardarSesion(s: Sesion) {
+  sesionActual = s;
+  try {
+    almacen?.setItem(CLAVE_SESION_WEB, JSON.stringify(s));
+  } catch {
+    // Sin lugar o bloqueado: queda solo en memoria, como en nativo.
+  }
+}
+
 export function cerrarSesion() {
   sesionActual = null;
+  almacen?.removeItem(CLAVE_SESION_WEB);
+}
+
+/** Otra pestaña cambió la sesión: esta la adopta (o la suelta) sin escribir de nuevo en localStorage. */
+export function adoptarSesion(s: Sesion | null) {
+  sesionActual = s;
 }
 
 /* ---------------------------------------------------------------------------
@@ -135,8 +182,9 @@ export async function login(usuario: string, password: string): Promise<Sesion> 
     throw new Error(String(json?.message ?? 'Usuario o contraseña incorrectos'));
   }
 
-  sesionActual = normalizar(data, usuario);
-  return sesionActual;
+  const nueva = normalizar(data, usuario);
+  guardarSesion(nueva);
+  return nueva;
 }
 
 export async function logout(): Promise<void> {

@@ -9,6 +9,7 @@ import { demoUser, iniciales } from './data';
 import { fechaLarga } from './fechas';
 import { MarkModal } from './mark-modal';
 import { useApp } from './provider';
+import { claveDeAviso, TarjetaAviso, useAvisoPostulacion } from './aviso-postulacion';
 import { PanelProximaClase, useProximaClase } from './proxima-clase';
 import { breakpoints, radius } from './theme';
 import { makeStyles, useTheme } from './theme-provider';
@@ -67,7 +68,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Campana: el punto marca una próxima clase que todavía no se vio; al abrir el panel queda vista
   // hasta que la próxima clase cambie (por la hora o porque cambió la agenda).
   const proxima = useProximaClase();
-  const claveNotificacion = proxima.tipo === 'listo' ? (proxima.proxima?.clave ?? null) : null;
+  // También la postulación sin terminar o con datos/archivos faltantes (aviso-postulacion.tsx).
+  const avisoPostulacion = useAvisoPostulacion();
+  const claves = [proxima.tipo === 'listo' ? (proxima.proxima?.clave ?? null) : null, avisoPostulacion ? claveDeAviso(avisoPostulacion) : null].filter((c): c is string => c !== null);
+  const claveNotificacion = claves.length ? claves.join(' · ') : null;
+  const cuantas = claves.length;
   const [vista, setVista] = useState<string | null>(null);
   const hayNueva = claveNotificacion !== null && claveNotificacion !== vista;
   const abrirNotificaciones = () => {
@@ -147,7 +152,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Text>
             )}
             <View>
-              <Button variant="ghost" size="icon" icon={Bell} accessibilityLabel={hayNueva ? 'Notificaciones, 1 nueva' : 'Notificaciones'} onPress={abrirNotificaciones} />
+              <Button variant="ghost" size="icon" icon={Bell} accessibilityLabel={hayNueva ? `Notificaciones, ${cuantas} ${cuantas === 1 ? 'nueva' : 'nuevas'}` : 'Notificaciones'} onPress={abrirNotificaciones} />
               {hayNueva && (
                 <View style={s.bellDot} pointerEvents="none">
                   <Dot />
@@ -177,6 +182,15 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {notifications && (
           <View style={[s.notificationPanel, { top: (desktop ? 84 : 64 + insets.top) - 6, right: desktop ? (wide ? 38 : 24) : 16 }]}>
+            {avisoPostulacion && (
+              <>
+                <Text weight="bold" size={13} style={{ marginBottom: 8 }}>
+                  Tu postulación
+                </Text>
+                <TarjetaAviso aviso={avisoPostulacion} compacta onCompletar={() => go('/postulacion')} />
+                <View style={{ height: 16 }} />
+              </>
+            )}
             <Text weight="bold" size={13} style={{ marginBottom: 12 }}>
               Tu próxima clase
             </Text>

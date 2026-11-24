@@ -12,7 +12,8 @@ import { Platform } from 'react-native';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 
-import { authFetch, ErrorApi, filasDe, pedirExterno } from './auth/api';
+import { authFetch, ErrorApi, filasDe } from './auth/api';
+import { subirACloudinary } from './cloudinary';
 import { hoy } from './fechas';
 import { ErrorDeCampo } from './intervenciones';
 
@@ -144,38 +145,12 @@ export async function tomarFoto(origen: 'camara' | 'galeria'): Promise<FotoLocal
   return foto;
 }
 
-type Firma = { upload_url?: string; campos?: Record<string, unknown> };
-
 /**
  * Sube la foto a Cloudinary y devuelve su secure_url. La firma vence en una hora: se pide
  * justo antes de subir. Lo subido queda en Cloudinary aunque después no se guarde la factura.
  */
-export async function subirFoto(foto: FotoLocal): Promise<string> {
-  let firma: Firma;
-  try {
-    firma = (await authFetch('mis-facturas/firma-foto', { method: 'POST' })) as Firma;
-  } catch (e) {
-    if (e instanceof ErrorApi && e.status === 503) throw new Error('Todavía no se pueden subir fotos. Avisale a la coordinación.');
-    throw e;
-  }
-  if (!firma.upload_url || !firma.campos) throw new Error('El servidor no devolvió el permiso para subir la foto.');
-
-  const form = new FormData();
-  if (Platform.OS === 'web') {
-    // En el navegador la uri es blob: o data:, y FormData necesita el archivo.
-    const blob = await (await fetch(foto.uri)).blob();
-    form.append('file', blob, 'factura.jpg');
-  } else {
-    // React Native sube el archivo local a partir de { uri, name, type }.
-    form.append('file', { uri: foto.uri, name: 'factura.jpg', type: 'image/jpeg' } as unknown as Blob);
-  }
-  for (const [k, v] of Object.entries(firma.campos)) form.append(k, String(v));
-
-  // Sin Content-Type: lo pone fetch con el boundary del multipart.
-  const res = await pedirExterno(firma.upload_url, { method: 'POST', body: form });
-  const r = (await res.json().catch(() => ({}))) as { secure_url?: string; error?: { message?: string } };
-  if (!res.ok || !r.secure_url) throw new Error(r.error?.message ? `No se pudo subir la foto: ${r.error.message}` : 'No se pudo subir la foto. Probá de nuevo.');
-  return r.secure_url;
+export function subirFoto(foto: FotoLocal): Promise<string> {
+  return subirACloudinary('mis-facturas/firma-foto', { uri: foto.uri, nombre: 'factura.jpg', tipo: 'image/jpeg' }, 'Todavía no se pueden subir fotos. Avisale a la coordinación.');
 }
 
 /** Si el enlace es de un PDF (el administrador puede cargar la factura electrónica desde el sitio). */

@@ -18,7 +18,7 @@ Está hecha con **React Native + Expo**. Una sola base de código funciona en **
 | Mis materiales | Conectada: manuales e índices **desarrollados y pendientes**: requiere publicar [sql/materiales_app_ethos.sql](sql/materiales_app_ethos.sql) |
 | Formularios (Form. 1, 2 y 3 y Acuerdo de cooperación) | Conectada: PDF e imagen con **solo las clases del facilitador**; el Acuerdo, solo en PDF (ver y descargar) y solo de sus instituciones: requiere publicar [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
 | Mis facturas | Conectada: el facilitador **saca o elige la foto** de su factura (va a Cloudinary), carga **número, timbrado, fecha** (en un calendario) y **mes**, y ve, corrige o borra las que están por revisar: requiere publicar [sql/facturas_app_ethos.sql](sql/facturas_app_ethos.sql) y un **APK nuevo** (permiso de cámara) |
-| Mi postulación | Conectada: formulario por pasos para postularse al año lectivo (`POSTULANTES_FACILITADORES`), con los datos de otro año para precargar, resumen y corrección: requiere publicar [sql/postulacion_app_ethos.sql](sql/postulacion_app_ethos.sql) |
+| Mi postulación | Conectada: formulario por pasos para postularse al año lectivo (`POSTULANTES_FACILITADORES`), con los datos de otro año para precargar, **documentos obligatorios** (foto o PDF, a Cloudinary), resumen y corrección: requiere publicar [sql/postulacion_app_ethos.sql](sql/postulacion_app_ethos.sql) y un **APK nuevo** (selector de PDF) |
 | Perfil | Datos del usuario logueado y **foto de perfil**; la foto, el modo claro/oscuro y el tema de color se guardan en el dispositivo |
 | Notificaciones (campana) | Conectada: **próxima clase** según la hora actual, con institución y próximo índice (sale de `mi-agenda`) |
 
@@ -123,7 +123,11 @@ __tests__/                   Tests
 ## Login y sesión
 
 - Se entra con un **usuario del workspace APEX** y su contraseña. El backend devuelve un token que dura **6 horas** y no se renueva.
-- El token vive **solo en memoria**: al cerrar la app, o recargar la PWA, se vuelve al login. Es a propósito.
+- **Dónde vive la sesión:**
+  - **Android (APK):** el token vive **solo en memoria**; al cerrar la app se vuelve al login.
+  - **Navegador / PWA** (24/11/2026): la sesión se guarda también en el `localStorage` del sitio (`facilitadores.sesion`). Así **Actualizar** no saca al login y **varias pestañas** comparten la sesión.
+    - Se borra al cerrar sesión, al vencer el token o con un 401, y se cierra en **todas** las pestañas (evento `storage`). Si en una pestaña se entra con otro usuario, las demás pasan a ese usuario.
+    - Un token vencido guardado no se usa.
 - Hay **un solo token activo por usuario**, compartido con el sistema APEX anterior: entrar en uno cierra la sesión en el otro.
 - **Recordar usuario y contraseña** es opcional. Se guarda solo después de un login correcto: en el APK, en el almacenamiento seguro del sistema (Keystore/Keychain); en la PWA, en `localStorage`, donde la contraseña queda en texto plano. Destildar el check y entrar lo borra.
 - Si el token vence o el backend lo invalida, aparece **un solo** aviso "Tu sesión se cerró" y la app vuelve al login. Sin señal, la sesión no se cierra: se muestra "Sin conexión con el servidor".
@@ -150,7 +154,7 @@ Los registros de un facilitador **nunca se mezclan** con los de otro:
 | 4 · Intervenciones, 5 · Días, 6 · Manuales | `/intervenciones` (menú **Intervenciones realizadas**) | `GET intervenciones-realizadas/instituciones · clases · historial` | [sql/intervenciones_realizadas_app_ethos.sql](sql/intervenciones_realizadas_app_ethos.sql) |
 | — · Formularios 1, 2 y 3 (del sitio editorial-ethos-app) y Acuerdo de cooperación (modelo "7 MODELO ACUERDO IE") | `/formularios` (menú **Formularios**) | `GET mis-formularios/postulaciones · institucion · intervenciones · bloqueos` | [sql/formularios_app_ethos.sql](sql/formularios_app_ethos.sql) |
 | — · Mis facturas (con "Totales por Facilitador" del sitio editorial-ethos-app) | `/facturas` (menú **Mis facturas**) | `GET` / `POST mis-facturas`, `PUT` / `DELETE mis-facturas/:id`, `POST mis-facturas/firma-foto` | [sql/facturas_app_ethos.sql](sql/facturas_app_ethos.sql) |
-| — · Mi postulación (tabla `POSTULANTES_FACILITADORES`, formulario JV26) | `/postulacion` (menú **Mi postulación**) | `GET` / `POST mi-postulacion`, `GET mi-postulacion/lugares` | [sql/postulacion_app_ethos.sql](sql/postulacion_app_ethos.sql) |
+| — · Mi postulación (tabla `POSTULANTES_FACILITADORES`, formulario JV26) | `/postulacion` (menú **Mi postulación**) | `GET` / `POST mi-postulacion`, `GET mi-postulacion/lugares`, `DELETE mi-postulacion`, `POST mi-postulacion/firma-documento`, `DELETE mi-postulacion/documento` | [sql/postulacion_app_ethos.sql](sql/postulacion_app_ethos.sql) |
 | 7 · Historial de Intervenciones, 8 · Observación | `/historial` (menú **Historial de intervenciones**) y **Editar** en Intervenciones realizadas | `GET historial-intervenciones`, `GET` / `PUT historial-intervenciones/:id` | [sql/historial_app_ethos.sql](sql/historial_app_ethos.sql) |
 
 ### Formularios (Form. 1, 2 y 3)
@@ -204,22 +208,39 @@ El facilitador envía la **foto** y los **datos** de su factura de cada mes, y e
 
 ### Mi postulación
 
-El facilitador se postula para seguir en el **año lectivo actual** y actualiza sus datos. Es la tabla del formulario JV26 (`POSTULANTES_FACILITADORES`), con la columna `ID_FACILITADOR`. El servidor completa esa columna a partir del token, así que cada facilitador ve y carga **solo su** postulación. Los postulantes nuevos, que no vienen de la app, la tienen vacía.
+Cualquier usuario con sesión se postula para el **año lectivo actual**, sea facilitador (para seguir) o no (postulante nuevo). Así lo decidió el usuario el 24/11/2026, y es una excepción deliberada a "sin `ID_FACILITADOR` no se piden datos". Es la tabla del formulario JV26 (`POSTULANTES_FACILITADORES`).
+- El servidor completa a partir del token `USUARIO` (el login, columna que agrega el script) y, si es facilitador, `ID_FACILITADOR`.
+- Cada uno ve y carga **solo su** postulación: la de su `ID_FACILITADOR` o la de su `USUARIO`.
+- Para quien no es facilitador, **Empezar de cero** precarga el nombre y el correo de la sesión.
 
 - **Reglas (23/11/2026):**
-  - Hay **una postulación por año**. Si ya existe, el envío la **corrige** en vez de crear otra.
-  - Se puede corregir **cuando quiera** mientras el año esté abierto.
+  - Hay **una postulación por usuario y año**. Si ya existe, el envío la **corrige** en vez de crear otra. El índice único `UX_POSTULANTES_FAC_USUARIO_ANIO` frena un alta doble simultánea (409).
+  - **Período de postulación** (24/11/2026): cargar, guardar sin terminar, subir documentos, corregir y eliminar se puede **solo mientras el período esté abierto**, según `FN_POSTULACION_ABIERTA(ID_ANIO) = 'SI'` (rango de fechas de `PERIODOS_POSTULACION` o habilitación extraordinaria).
+    - `PERIODOS_POSTULACION` y la función **se cargan y mantienen desde el admin**. La app y el script solo las **leen**; el script verifica que existan.
+    - Con el período cerrado, la postulación enviada se ve en **solo lectura** (sin Corregir, Editar ni Eliminar) y el servidor responde 409 a todo lo que escribe. Sin enviar, la pantalla dice cuándo abre o cuándo cerró (`textoPeriodo`). El aviso de Inicio y de la campana no aparece.
+    - `FN_POSTULACION_ABIERTA` usa `TRUNC(SYSDATE)`, que en oracleapex.com es la fecha UTC: el día cambia a las 21:00 de Paraguay.
   - **"No estoy de acuerdo"** no envía nada.
   - El país es siempre **1 (Paraguay)**.
-  - El año es `FN_ANIO_LECTIVO_ACTUAL()`. Si no está en `ANIOS_LECTIVOS`, la pantalla dice que no hay postulación abierta.
+  - El año es `FN_ANIO_LECTIVO_ACTUAL()`. Si no está en `ANIOS_LECTIVOS`, la pantalla dice que no hay postulación abierta (`anio_registrado: false`).
 - **Pantalla** (`screens/postulacion.tsx`): hay tres estados.
   - **Sin enviar:** una tarjeta "Postulación \<año\> · Abierta" con la lista de pasos y tres formas de empezar:
     - **Usar mis datos de \<año\>**, si hay una postulación de otro año.
-    - **Empezar de cero**, con el nombre, el teléfono y la fecha de nacimiento de `FACILITADORES`.
+    - **Empezar con mis datos de facilitador** (si ya es facilitador) o **Empezar de cero**. Si es facilitador, el formulario se precarga con su fila de `FACILITADORES`: el `GET` la manda tal cual en `facilitador`, solo la suya, y `datosDeFacilitador` lleva el texto libre a los códigos de la postulación (`SOLTERO`, `SI`/`NO`, `VIRTUAL`…). Lo que no reconoce queda vacío. No precarga la nacionalidad, porque es un id de `NACIONALIDADES`. `DENOMINACIÓN` se lee con SQL dinámico por la tilde.
     - **Seguir donde dejaste**, si hay algo cargado y sin enviar.
   - **Enviada:** la fecha de envío, el **resumen** por secciones y **Corregir**. **Editar** abre el formulario directo en esa sección.
-  - **Cerrada:** "No hay una postulación abierta".
-- **Formulario** (`postulacion-form.tsx`): 8 pasos más **Revisar y enviar**, uno por pantalla.
+  - **Eliminar mi postulación**, con confirmación, llama a `DELETE mi-postulacion`: borra la fila del año y sus documentos de Cloudinary, y la pantalla vuelve a "Sin enviar" para cargarla de nuevo.
+  - **Cerrada:** si el año no está en `ANIOS_LECTIVOS`, "No hay una postulación abierta". Si el período está cerrado, cuándo abre o cuándo cerró, y la enviada en solo lectura.
+- **Documentos (24/11/2026):** el paso **Documentos** pide, obligatorios, la **foto carnet** (solo foto), la **cédula frente y dorso**, el **CV**, el **certificado de no agresor** y los **antecedentes judiciales y policiales** (columnas `*_ARCHIVO` que agregó el usuario), y por cada estudio el **título** (concluido) o una **constancia** (cursando). Las reglas están en `documentosRequeridos` de `postulacion.ts` y se repiten en el paquete.
+  - Cada archivo se sube **al elegirlo**, directo a Cloudinary (`subirACloudinary` de `cloudinary.ts`, compartido con Mis facturas), con la firma de `POST mi-postulacion/firma-documento`: preset Signed **`fcfacilitadores`**, carpeta `postulaciones-facilitadores`, `/auto/upload` para fotos y PDF. La postulación guarda el `secure_url` en las columnas `*_URL`.
+  - **Fotos:** cámara o galería, achicadas a JPEG de hasta 3 MB (`tomarFoto` de facturas). **PDF:** `expo-document-picker` (módulo nativo, **requiere APK nuevo**), hasta 10 MB.
+  - El secreto queda en Oracle. El paquete toma el cloud y el `api_key` de `PKG_CLOUDINARY_ETHOS.escribir_firma` y rehace la firma con el preset de las postulaciones.
+  - **Borrado:** al firmar, el servidor elige el `public_id` y lo anota a nombre del usuario en `POSTULANTES_FAC_ARCHIVOS`, una tabla solo de la app. Solo ese usuario puede borrar ese archivo.
+    - **Quitar**, reemplazar un documento o descartar el borrador llama a `DELETE mi-postulacion/documento?url=` (`quitarDocumento`). El archivo se borra enseguida si ninguna postulación guardada lo usa; si lo usa, al guardar la corrección.
+    - Al corregir, el servidor borra los reemplazados, salvo que los use otra postulación.
+    - Todo depende de `PKG_CLOUDINARY_ETHOS.borrar`: sin él, los archivos quedan.
+    - Lo borrado de la galería del celular no se puede detectar.
+  - **Cloudinary:** en el preset `fcfacilitadores` conviene cambiar *Asset folder* (figura `samples/ecommerce`) a `postulaciones-facilitadores` o dejarlo vacío. Para que **Ver** abra los PDF, en *Settings → Security* tiene que estar habilitado *Allow delivery of PDF and ZIP files*.
+- **Formulario** (`postulacion-form.tsx`): 9 pasos más **Revisar y enviar**, uno por pantalla.
   - **Navegación:** una barra de progreso arriba, con un chip por paso. Se puede volver a cualquier paso ya visitado, y cada paso empieza desde arriba (`useSubirAlInicio` del shell).
   - **Opciones:** van en **botones**, no en listas desplegables, y los campos condicionales aparecen solo cuando corresponden: el título si está concluido o cursando, el curso `2/4` si está cursando, empresa y cargo si trabaja, el vehículo si tiene movilidad, y "¿Cuál?" si el estado civil es Otro.
   - **Fecha de nacimiento:** se escribe como `DD/MM/AAAA` y muestra la edad. El calendario de facturas va mes por mes y para un nacimiento no sirve.
@@ -227,7 +248,13 @@ El facilitador se postula para seguir en el **año lectivo actual** y actualiza 
   - **Ubicación de la casa:** **Usar mi ubicación** pone `latitud, longitud` del GPS (`expo-location`, que ya está en el APK). También se puede pegar el enlace de Google Maps, y **Ver en el mapa** lo abre.
   - **Atajos:** **La cuenta es mía** copia el nombre y la cédula al titular, y **La factura la emito yo** copia el nombre al emisor.
   - **Validación:** cada paso se valida al tocar **Siguiente**, con los valores de los `CHECK` de la tabla. Cada nivel de estudio usa sus propios códigos, por ejemplo `CONCLUIDA` e `INCONCLUSA` en licenciatura. Al enviar se revisan todos los pasos, y si el servidor rechaza un campo, la app lleva al paso donde está.
-- **Lo cargado sin enviar** queda **solo en memoria** (`postulacion.ts`), por usuario y año, mientras la app esté abierta. Nunca se guarda en el dispositivo, porque incluye los datos bancarios.
+- **Ningún campo es obligatorio para guardar** (24/11/2026). **Guardar** (en cada paso) y **Guardar y terminar después** (último paso, si falta algo) mandan lo cargado **sin validar** a `PUT mi-postulacion/borrador`, que lo guarda en `POSTULANTES_FAC_BORRADORES`, una tabla solo de la app con una fila por usuario y año.
+  - **Enviar** pide todo completo y pasa la postulación a `POSTULANTES_FACILITADORES`; el borrador se borra. Así la tabla del JV26 nunca recibe filas incompletas.
+  - **El proceso** (primer paso) muestra `ANIOS_LECTIVOS.PROCESO_POSTULACION` del año abierto, que llega como `proceso` en `GET mi-postulacion`. Puede ser texto plano o HTML del editor de APEX; `textoDeProceso` lo pasa a texto con párrafos y viñetas. Sin **Estoy de acuerdo** no se puede seguir ni guardar.
+  - **Aviso de lo que falta** (`aviso-postulacion.tsx`): lista los datos que faltan en cada paso y los archivos. Sale en **Inicio**, en la **campana** (con su punto de "nueva", que vuelve a aparecer si cambia lo que falta) y en Mi postulación. Inicio y la campana comparten una sola consulta, que Mi postulación actualiza cada vez que carga. Si no la empezó, invita a empezarla.
+  - **Siguiente** ya no frena. Lo que falta lo calcula `faltantes()` y se muestra en el último paso, en la pantalla y en **Inicio** (`AvisoPostulacionInicio` de `aviso-postulacion.tsx`), con datos por paso y archivos que faltan.
+  - Lo no guardado queda en memoria, por usuario y año. En el dispositivo nunca se guarda nada, porque incluye datos bancarios.
+  - Descartar (`DELETE mi-postulacion/borrador`) o eliminar la postulación borra también el borrador y sus documentos de Cloudinary.
 - **Backend:** `GET` y `POST mi-postulacion` y `GET mi-postulacion/lugares` (ver [sql/README.md](sql/README.md)). El `POST` manda el JSON entero, que el paquete lee de `:body_text`. `EDAD` la calcula el servidor, y `FECHA_REGISTRO` queda en hora de Paraguay y es la del primer envío.
 - **Formatos que eligió la app:**
   - `DIAS_DISPONIBLES` se guarda como `LUNES,MARTES,MIERCOLES` (sin tildes, en el orden de la semana).

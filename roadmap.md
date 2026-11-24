@@ -30,9 +30,13 @@
 - [x] Mis facturas: foto de la factura (cámara o galería) a Cloudinary, número, timbrado, fecha (en calendario) y mes, y ver, corregir o borrar las que están por revisar, con endpoints `mis-facturas/*`.
 
 - [x] Mi postulación: formulario por pasos para postularse al año lectivo (`POSTULANTES_FACILITADORES`), con endpoints `mi-postulacion/*`.
+- [x] Mi postulación: período de postulación con `FN_POSTULACION_ABIERTA` (`PERIODOS_POSTULACION`, cargada desde el admin, solo lectura); cerrado = solo lectura.
+- [x] Mi postulación → Documentos: foto carnet, cédula y títulos o constancias (foto o PDF) a Cloudinary con el preset `fcfacilitadores`, obligatorios.
 
 ## Pendiente
-- [ ] Correr en APEX `sql/postulacion_app_ethos.sql` (3 de 3 handlers) y probar alta y corrección con un facilitador real. Confirmar que el año lectivo actual está en `ANIOS_LECTIVOS` y reemplazar el texto de "El proceso" por las etapas y requisitos reales.
+- [ ] Mi postulación → Documentos y postulantes que no son facilitadores: correr de nuevo `sql/postulacion_app_ethos.sql` (agrega las 7 columnas `*_URL`, `USUARIO` y el índice `UX_POSTULANTES_FAC_USUARIO_ANIO`; probar también con un usuario que no sea facilitador, como JOSEG; deben quedar 8 de 8 handlers y `[OK] Cloudinary configurado`), cambiar el *Asset folder* del preset `fcfacilitadores` (hoy `samples/ecommerce`), habilitar la entrega de PDF en Cloudinary, generar un **APK nuevo** (`expo-document-picker`) y probar foto, galería y PDF con un facilitador real.
+- [ ] Regenerar el API secret de Cloudinary (se pegó en un chat) y actualizarlo en Oracle con `PKG_CLOUDINARY_ETHOS.fijar_credenciales`.
+- [ ] Correr en APEX `sql/postulacion_app_ethos.sql` (4 de 4 handlers) y probar alta y corrección con un facilitador real. Confirmar que el año lectivo actual está en `ANIOS_LECTIVOS` y reemplazar el texto de "El proceso" por las etapas y requisitos reales.
 - [ ] Correr en APEX `sql/facturas_app_ethos.sql` (después de `cloudinary.sql` y `facturas_facilitadores.sql` del sitio; deben quedar 5 de 5 handlers) y probar alta, corrección y borrado con un facilitador real; confirmar que la factura aparece por revisar en Totales por Facilitador del sitio.
 - [ ] Generar un APK nuevo para Mis facturas: se habilitó el permiso de cámara de `expo-image-picker`.
 - [ ] Borrar las fotos de Cloudinary al borrar una factura: el `PKG_CLOUDINARY_ETHOS` de Oracle no tiene `BORRAR` (confirmado el 04/11/2026). Correr el `backend/cloudinary.sql` nuevo del sitio, probar con `PKG_CLOUDINARY_ETHOS.probar` y borrar a mano las fotos de prueba que quedaron.

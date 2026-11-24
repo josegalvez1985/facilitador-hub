@@ -1,31 +1,39 @@
-// "Mi postulación": el facilitador se postula para el año lectivo y actualiza sus datos.
-// Endpoints mi-postulacion/* (sql/postulacion_app_ethos.sql → PKG_POSTULACION_APP_ETHOS), con el
-// ID_FACILITADOR sacado del token. Una por año: si ya la envió, se ve el resumen y se puede corregir.
+// "Mi postulación": cualquier usuario con sesión, sea o no facilitador (24/11/2026), se postula para
+// el año lectivo. Endpoints mi-postulacion/* (sql/postulacion_app_ethos.sql →
+// PKG_POSTULACION_APP_ETHOS): el servidor identifica la postulación por el usuario del token y, si es
+// facilitador, por su ID_FACILITADOR. Es la excepción deliberada a "sin ID_FACILITADOR no se piden
+// datos": solo devuelve la postulación propia. Una por año: si ya la envió, resumen y corrección.
 // - Sin enviar: se puede empezar con los datos de la postulación de otro año (o de cero).
 // - Lo cargado y no enviado queda en memoria mientras la app está abierta (postulacion.ts).
 
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { CalendarX2, CircleCheck, ClipboardPen, Copy, Pencil, RefreshCw, RotateCcw, UserRound } from 'lucide-react-native';
+import { CalendarX2, CircleCheck, ClipboardPen, Copy, Pencil, RefreshCw, RotateCcw, Trash2, UserRound } from 'lucide-react-native';
 
 import { useSession } from '../auth/session';
+import { avisoDe, TarjetaAviso, useFijarAviso } from '../aviso-postulacion';
 import { FormularioPostulacion, Resumen } from '../postulacion-form';
 import {
   borrarBorrador,
   cargarPostulacion,
   datosVacios,
+  descartarGuardada,
+  eliminarPostulacion,
   FALTA_PUBLICAR,
   faltaPublicar,
   guardarBorrador,
   isoADma,
+  textoPeriodo,
   leerBorrador,
   PASOS,
+  quitarDocumentosDe,
   type Datos,
   type EstadoPostulacion,
 } from '../postulacion';
 import { radius } from '../theme';
 import { makeStyles, useTheme } from '../theme-provider';
-import { Badge, Button, Card, PageTitle, Text } from '../ui';
+import { useToast } from '../toast';
+import { Badge, Button, Card, Modal, ModalActions, ModalText, PageTitle, Text } from '../ui';
 
 type Resultado = { clave: string } & ({ tipo: 'error'; mensaje: string } | { tipo: 'listo'; estado: EstadoPostulacion });
 type Form = { datos: Datos; paso: number };
@@ -37,25 +45,59 @@ export function PostulacionScreen() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [intento, setIntento] = useState(0);
   const [form, setForm] = useState<Form | null>(null);
+  const toast = useToast();
+  const fijarAviso = useFijarAviso();
+  const [eliminar, setEliminar] = useState(false);
+  const [eliminando, setEliminando] = useState(false);
+  const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
 
-  // Sin ID_FACILITADOR no se piden datos.
-  const id = facilitador.estado === 'listo' ? facilitador.id : null;
-  const clave = `${id}-${intento}`;
+  // Se espera a saber si es facilitador (o no), pero sin ID_FACILITADOR también se postula:
+  // el servidor devuelve solo la postulación de este usuario.
+  const listo = facilitador.estado === 'listo';
+  const quien = `${sesion?.usuario ?? ''}-${listo ? facilitador.id : ''}`;
+  const clave = `${quien}-${intento}`;
   useEffect(() => {
-    if (id === null) return;
+    if (!listo) return;
     let vigente = true;
     cargarPostulacion()
-      .then((estado) => vigente && setResultado({ clave: `${id}-${intento}`, tipo: 'listo', estado }))
-      .catch((e: unknown) => vigente && setResultado({ clave: `${id}-${intento}`, tipo: 'error', mensaje: e instanceof Error ? e.message : 'No se pudo cargar tu postulación' }));
+      .then((estado) => {
+        if (!vigente) return;
+        setResultado({ clave, tipo: 'listo', estado });
+        // Inicio y la campana muestran lo que falta: se actualizan con esto, sin otra consulta.
+        fijarAviso(estado);
+      })
+      .catch((e: unknown) => vigente && setResultado({ clave, tipo: 'error', mensaje: e instanceof Error ? e.message : 'No se pudo cargar tu postulación' }));
     return () => {
       vigente = false;
     };
-  }, [id, intento]);
+    // fijarAviso cambia en cada render y solo escribe la caché: no hace falta volver a cargar por eso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listo, clave]);
 
   const estado = resultado && resultado.clave === clave ? resultado : null;
   const recargar = () => {
     if (facilitador.estado === 'error') reintentarFacilitador();
     else setIntento((n) => n + 1);
+  };
+
+  // Elimina la enviada: el servidor borra también sus documentos. Lo cargado sin enviar
+  // (la corrección en curso) se descarta, con sus documentos nuevos.
+  const confirmarEliminar = async () => {
+    setEliminando(true);
+    setErrorEliminar(null);
+    try {
+      await eliminarPostulacion();
+      const b = leerBorrador(claveBorrador);
+      if (b) quitarDocumentosDe(b.datos);
+      borrarBorrador();
+      setEliminar(false);
+      toast.success('Postulación eliminada. Podés cargarla de nuevo.');
+      recargar();
+    } catch (err) {
+      setErrorEliminar(err instanceof Error ? err.message : 'No se pudo eliminar la postulación.');
+    } finally {
+      setEliminando(false);
+    }
   };
 
   const anio = estado?.tipo === 'listo' ? estado.estado.anio : '';
@@ -66,6 +108,8 @@ export function PostulacionScreen() {
     return (
       <FormularioPostulacion
         anio={anio}
+        esFacilitador={estado.estado.esFacilitador}
+        proceso={estado.estado.proceso}
         datosIniciales={form.datos}
         pasoInicial={form.paso}
         esCorreccion={estado.estado.postulacion !== null}
@@ -76,13 +120,18 @@ export function PostulacionScreen() {
           setForm(null);
           recargar();
         }}
+        onGuardada={() => {
+          borrarBorrador();
+          setForm(null);
+          recargar();
+        }}
       />
     );
   }
 
   const encabezado = (
     <PageTitle title="Mi postulación" subtitle="Postulate para el año lectivo y mantené tus datos al día.">
-      <Button size="icon" variant="outline" icon={RefreshCw} accessibilityLabel="Actualizar" onPress={recargar} disabled={facilitador.estado === 'cargando' || (id !== null && !estado)} />
+      <Button size="icon" variant="outline" icon={RefreshCw} accessibilityLabel="Actualizar" onPress={recargar} disabled={facilitador.estado === 'cargando' || (listo && !estado)} />
     </PageTitle>
   );
 
@@ -99,14 +148,6 @@ export function PostulacionScreen() {
       <>
         {encabezado}
         <ErrorCard mensaje={facilitador.mensaje} onReintentar={recargar} />
-      </>
-    );
-  }
-  if (id === null) {
-    return (
-      <>
-        {encabezado}
-        <Vacio icono={UserRound} texto={`Tu usuario ${sesion?.usuario ? `(${sesion.usuario}) ` : ''}no está registrado como facilitador.`} />
       </>
     );
   }
@@ -128,7 +169,9 @@ export function PostulacionScreen() {
   }
 
   const e = estado.estado;
-  if (!e.abierta) {
+  // Sin el año lectivo en ANIOS_LECTIVOS no hay nada que mostrar. El período (abierta) se mira abajo:
+  // cerrado, la postulación se ve pero no se modifica.
+  if (!e.anioRegistrado) {
     return (
       <>
         {encabezado}
@@ -137,7 +180,19 @@ export function PostulacionScreen() {
     );
   }
 
-  const borrador = leerBorrador(claveBorrador);
+  // Lo cargado sin enviar: lo de esta sesión (en memoria) o, si no, lo guardado sin terminar en el servidor.
+  const borrador = leerBorrador(claveBorrador) ?? (e.guardada ? { datos: e.guardada.datos, paso: e.guardada.paso } : null);
+  // "Sin empezar" ya lo dice la tarjeta de abajo: acá solo lo que falta.
+  const aviso = (() => {
+    const a = avisoDe(e);
+    return a && a.tipo !== 'sin-empezar' ? a : null;
+  })();
+  // Descartar: los documentos que solo usaba lo descartado se borran de Cloudinary.
+  const descartar = () => {
+    if (borrador) quitarDocumentosDe(borrador.datos);
+    borrarBorrador();
+    if (e.guardada) descartarGuardada().catch(() => {});
+  };
 
   // Ya enviada: el resumen y "Corregir".
   if (e.postulacion) {
@@ -146,6 +201,7 @@ export function PostulacionScreen() {
       <>
         {encabezado}
         <View style={{ maxWidth: 720, width: '100%', gap: 16 }}>
+          {aviso && <TarjetaAviso aviso={aviso} />}
           <Card style={s.hero}>
             <View style={[s.heroIcono, { backgroundColor: colors.successSoft }]}>
               <CircleCheck size={26} color={colors.success} />
@@ -161,10 +217,11 @@ export function PostulacionScreen() {
                 </Text>
               ) : null}
               <Text size={13} color={colors.mutedForeground} style={{ lineHeight: 19, marginTop: 4 }}>
-                Si cambió algún dato, corregila cuando quieras.
+                {e.abierta ? `Si cambió algún dato, corregila mientras el período esté abierto. ${textoPeriodo(e)}` : `${textoPeriodo(e)} Ya no se puede modificar.`}
               </Text>
             </View>
           </Card>
+          {e.abierta && (
           <View style={s.acciones}>
             <Button icon={Pencil} label={borrador ? `Seguir corrigiendo (paso ${borrador.paso + 1})` : 'Corregir mi postulación'} onPress={() => setForm(borrador ? { datos: borrador.datos, paso: borrador.paso } : { datos: { ...p.datos, acepta_proceso: 'DE_ACUERDO' }, paso: 1 })} />
             {borrador && (
@@ -173,30 +230,62 @@ export function PostulacionScreen() {
                 icon={RotateCcw}
                 label="Descartar cambios"
                 onPress={() => {
-                  borrarBorrador();
+                  descartar();
                   setIntento((n) => n + 1);
                 }}
               />
             )}
           </View>
-          <Resumen datos={p.datos} lugar={{ departamento: p.departamento, ciudad: p.ciudad }} onEditar={(paso) => setForm({ datos: { ...p.datos, acepta_proceso: 'DE_ACUERDO' }, paso })} />
+          )}
+          {/* Período cerrado: solo lectura (sin Editar ni Eliminar). */}
+          <Resumen datos={p.datos} lugar={{ departamento: p.departamento, ciudad: p.ciudad }} onEditar={e.abierta ? (paso) => setForm({ datos: { ...p.datos, acepta_proceso: 'DE_ACUERDO' }, paso }) : undefined} />
+          {e.abierta && <Button variant="ghost" icon={Trash2} label="Eliminar mi postulación" textStyle={{ color: colors.destructive }} onPress={() => setEliminar(true)} style={{ alignSelf: 'flex-start' }} />}
         </View>
+        <Modal visible={eliminar} onClose={() => !eliminando && setEliminar(false)} title="¿Eliminar tu postulación?" closeLabel="Cancelar">
+          <ModalText>Se borran tu postulación {e.anio} y los documentos que subiste. Después podés cargarla de nuevo desde cero.</ModalText>
+          {errorEliminar ? (
+            <Text accessibilityRole="alert" size={13} color={colors.destructive}>
+              {errorEliminar}
+            </Text>
+          ) : null}
+          <ModalActions>
+            <Button variant="outline" label="Cancelar" onPress={() => setEliminar(false)} disabled={eliminando} />
+            <Button icon={Trash2} label={eliminando ? 'Eliminando…' : 'Eliminar'} onPress={() => void confirmarEliminar()} disabled={eliminando} />
+          </ModalActions>
+        </Modal>
       </>
     );
   }
 
   // Sin enviar: empezar (de cero, con los datos de otro año, o seguir el borrador).
+  // Lo que ya se sabe: de FACILITADORES si es facilitador; si no, el nombre y el correo de la sesión.
+  // Si ya es facilitador, todo lo que hay en FACILITADORES (deFacilitador); si no, lo de la sesión.
   const deCero = (): Datos => {
-    const d = datosVacios();
-    d.nombre_completo = e.facilitador.nombre;
-    d.telefono = e.facilitador.telefono;
-    d.fecha_nacimiento = e.facilitador.fechaNacimiento;
+    const d: Datos = { ...datosVacios(), ...e.deFacilitador };
+    if (!d.nombre_completo && sesion && sesion.nombre !== sesion.usuario) d.nombre_completo = sesion.nombre;
+    if (!d.correo_electronico) d.correo_electronico = sesion?.email ?? '';
     return d;
   };
+  const etiquetaEmpezar = e.esFacilitador ? 'Empezar con mis datos de facilitador' : 'Empezar de cero';
+
+  // Sin enviar y con el período cerrado (todavía no abrió, ya cerró o no está cargado).
+  if (!e.abierta) {
+    return (
+      <>
+        {encabezado}
+        <Vacio
+          icono={CalendarX2}
+          texto={`${textoPeriodo(e)}${e.guardada ? ' Tu postulación quedó guardada sin terminar y ya no se puede enviar. Si tenés dudas, consultá con la coordinación.' : ' Cuando esté abierto vas a poder postularte acá.'}`}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       {encabezado}
       <View style={{ maxWidth: 720, width: '100%', gap: 16 }}>
+        {aviso && <TarjetaAviso aviso={aviso} />}
         <Card style={s.hero}>
           <View style={[s.heroIcono, { backgroundColor: colors.secondary }]}>
             <ClipboardPen size={26} color={colors.primaryText} />
@@ -206,8 +295,13 @@ export function PostulacionScreen() {
             <Text weight="bold" size={20}>
               Postulación {e.anio}
             </Text>
+            {textoPeriodo(e) ? (
+              <Text size={12} weight="semibold" color={colors.primaryText}>
+                {textoPeriodo(e)}
+              </Text>
+            ) : null}
             <Text size={13} color={colors.mutedForeground} style={{ lineHeight: 20 }}>
-              Contale a la fundación que querés seguir como facilitador este año y actualizá tus datos. Son {PASOS.length - 1} pasos cortos y te lleva unos 10 minutos.
+              {e.esFacilitador ? 'Contale a la fundación que querés seguir como facilitador este año y actualizá tus datos.' : 'Contale a la fundación que querés ser facilitador este año.'} Son {PASOS.length - 1} pasos cortos y te lleva unos 10 minutos.
             </Text>
           </View>
         </Card>
@@ -231,7 +325,7 @@ export function PostulacionScreen() {
               icon={RotateCcw}
               label="Empezar de nuevo"
               onPress={() => {
-                borrarBorrador();
+                descartar();
                 setForm({ datos: deCero(), paso: 0 });
               }}
             />
@@ -246,7 +340,7 @@ export function PostulacionScreen() {
             </Text>
             <View style={s.acciones}>
               <Button size="lg" icon={Copy} label={`Usar mis datos de ${e.anterior.anio}`} onPress={() => setForm({ datos: { ...e.anterior!.datos, acepta_proceso: '' }, paso: 0 })} />
-              <Button variant="outline" label="Empezar de cero" onPress={() => setForm({ datos: deCero(), paso: 0 })} />
+              <Button variant="outline" label={etiquetaEmpezar} onPress={() => setForm({ datos: deCero(), paso: 0 })} />
             </View>
           </Card>
         ) : (

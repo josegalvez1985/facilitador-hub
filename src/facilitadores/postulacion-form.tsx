@@ -5,29 +5,40 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
+import { Image } from 'expo-image';
 import {
   ArrowLeft,
   ArrowRight,
   Banknote,
   BriefcaseBusiness,
   CalendarClock,
+  Camera,
   Check,
   ChevronDown,
   Church,
+  ClipboardList,
   CircleCheck,
   CircleX,
   ExternalLink,
+  FileText,
+  FileUp,
   GraduationCap,
   Handshake,
+  ImagePlus,
   LocateFixed,
   MapPinHouse,
   Pencil,
+  Save,
   Search,
   Send,
+  Trash2,
+  TriangleAlert,
   UserRound,
   type LucideIcon,
 } from 'lucide-react-native';
 
+import type { ArchivoLocal } from './cloudinary';
+import { esPdf, miniatura } from './facturas';
 import { MESES } from './fechas';
 import { ErrorDeCampo } from './intervenciones';
 import {
@@ -35,6 +46,7 @@ import {
   cargarLugares,
   DIAS,
   dmaAIso,
+  documentosRequeridos,
   EDAD_MAXIMA,
   EDAD_MINIMA,
   edadDe,
@@ -43,26 +55,32 @@ import {
   ESTADO_CIVIL,
   etiquetaDe,
   FACTURA_TIPO,
+  fotoDeDocumento,
   isoADma,
   LARGO_AREAS,
   mascaraFecha,
   NIVELES,
   PASOS,
   pasoDeCampo,
+  pdfDeDocumento,
   pideTitulo,
+  faltantes,
+  guardarSinTerminar,
   primerPasoConErrores,
+  quitarDocumento,
   SI_NO,
   soloCedula,
+  subirDocumento,
   TALLES,
   TIPO_VEHICULO,
   TIPOS_CUENTA,
   TURNOS,
   ubicacionActual,
-  validarPaso,
   VIVE_CON,
   type CampoTexto,
   type Datos,
   type Departamento,
+  type Documento,
   type Errores,
   type Lugar,
   type Opcion,
@@ -83,11 +101,16 @@ const ICONO_PASO: Record<PasoId, LucideIcon> = {
   disponibilidad: CalendarClock,
   iglesia: Church,
   cobro: Banknote,
+  documentos: FileUp,
   revisar: Send,
 };
 
 type Props = {
   anio: string;
+  /** Si ya es facilitador (se postula para seguir) o es un postulante nuevo. */
+  esFacilitador: boolean;
+  /** Etapas y requisitos del proceso del año (ANIOS_LECTIVOS.PROCESO_POSTULACION), en texto. */
+  proceso: string;
   datosIniciales: Datos;
   pasoInicial: number;
   /** Ya la había enviado: el botón final dice "Guardar cambios". */
@@ -96,9 +119,11 @@ type Props = {
   onCambio: (datos: Datos, paso: number) => void;
   onSalir: () => void;
   onEnviada: () => void;
+  /** Guardada sin terminar desde el último paso: vuelve a la pantalla. */
+  onGuardada: () => void;
 };
 
-export function FormularioPostulacion({ anio, datosIniciales, pasoInicial, esCorreccion, onCambio, onSalir, onEnviada }: Props) {
+export function FormularioPostulacion({ anio, esFacilitador, proceso, datosIniciales, pasoInicial, esCorreccion, onCambio, onSalir, onEnviada, onGuardada }: Props) {
   const { colors } = useTheme();
   const s = useStyles();
   const toast = useToast();
@@ -129,13 +154,26 @@ export function FormularioPostulacion({ anio, datosIniciales, pasoInicial, esCor
     subir();
   };
 
-  const siguiente = () => {
-    const e = validarPaso(actual.id, d);
-    if (Object.keys(e).length) {
-      setErrores({ ...e, general: 'Revisá los campos marcados.' });
-      return;
+  // Ningún campo es obligatorio para avanzar ni para guardar: lo que falta se ve en el último paso
+  // (y en el aviso de Inicio). Para ENVIAR tiene que estar todo.
+  const siguiente = () => ir(paso + 1);
+  const falta = faltantes(d);
+  const completa = falta.pasos.length === 0 && falta.archivos.length === 0;
+  // Sin acuerdo con el proceso no se sigue ni se guarda nada.
+  const noDeAcuerdo = d.acepta_proceso !== 'DE_ACUERDO';
+
+  const guardar = async (salir: boolean) => {
+    setEnviando(true);
+    setErrores({});
+    try {
+      await guardarSinTerminar(d, paso);
+      toast.success(salir ? 'Guardada. Podés terminarla cuando quieras.' : 'Guardada');
+      if (salir) onGuardada();
+    } catch (err) {
+      setErrores({ general: err instanceof Error ? err.message : 'No se pudo guardar.' });
+    } finally {
+      setEnviando(false);
     }
-    ir(paso + 1);
   };
 
   const enviar = async () => {
@@ -179,11 +217,12 @@ export function FormularioPostulacion({ anio, datosIniciales, pasoInicial, esCor
             Paso {paso + 1} de {PASOS.length}
           </Text>
         </View>
+        <Button variant="outline" size="sm" icon={Save} label="Guardar" onPress={() => void guardar(false)} disabled={enviando || noDeAcuerdo} accessibilityLabel="Guardar sin terminar" />
       </View>
 
       <BarraPasos paso={paso} alcanzado={alcanzado} onIr={ir} disabled={enviando} />
 
-      {actual.id === 'proceso' && <PasoProceso anio={anio} {...ctx} />}
+      {actual.id === 'proceso' && <PasoProceso anio={anio} esFacilitador={esFacilitador} proceso={proceso} {...ctx} />}
       {actual.id === 'personales' && <PasoPersonales {...ctx} />}
       {actual.id === 'domicilio' && <PasoDomicilio {...ctx} />}
       {actual.id === 'estudios' && <PasoEstudios {...ctx} />}
@@ -191,11 +230,13 @@ export function FormularioPostulacion({ anio, datosIniciales, pasoInicial, esCor
       {actual.id === 'disponibilidad' && <PasoDisponibilidad {...ctx} />}
       {actual.id === 'iglesia' && <PasoIglesia {...ctx} />}
       {actual.id === 'cobro' && <PasoCobro {...ctx} />}
+      {actual.id === 'documentos' && <PasoDocumentos {...ctx} />}
+      {actual.id === 'revisar' && !completa && <Faltan falta={falta} onIr={enviando ? undefined : ir} />}
       {actual.id === 'revisar' && <Resumen datos={d} onEditar={enviando ? undefined : ir} />}
 
       {ultimo && (
         <Text size={12} color={colors.mutedForeground} style={{ lineHeight: 18 }}>
-          Después de enviarla vas a poder corregirla desde esta misma sección.
+          {completa ? 'Después de enviarla vas a poder corregirla desde esta misma sección.' : 'Podés guardarla así y terminarla cuando quieras. Para enviarla tiene que estar todo completo.'}
         </Text>
       )}
 
@@ -212,12 +253,59 @@ export function FormularioPostulacion({ anio, datosIniciales, pasoInicial, esCor
       <View style={s.navegacion}>
         {paso > 0 ? <Button variant="outline" icon={ArrowLeft} label="Atrás" onPress={() => ir(paso - 1)} disabled={enviando} /> : <View />}
         {ultimo ? (
-          <Button size="lg" icon={Send} label={enviando ? 'Enviando…' : esCorreccion ? 'Guardar cambios' : 'Enviar postulación'} onPress={() => void enviar()} disabled={enviando} />
+          completa ? (
+            <Button size="lg" icon={Send} label={enviando ? 'Enviando…' : esCorreccion ? 'Guardar cambios' : 'Enviar postulación'} onPress={() => void enviar()} disabled={enviando} />
+          ) : (
+            <Button size="lg" icon={Save} label={enviando ? 'Guardando…' : 'Guardar y terminar después'} onPress={() => void guardar(true)} disabled={enviando || noDeAcuerdo} />
+          )
         ) : (
-          <Button size="lg" iconRight={ArrowRight} label="Siguiente" onPress={siguiente} disabled={enviando || (actual.id === 'proceso' && d.acepta_proceso === 'NO_DE_ACUERDO')} />
+          <Button size="lg" iconRight={ArrowRight} label="Siguiente" onPress={siguiente} disabled={enviando || (actual.id === 'proceso' && noDeAcuerdo)} />
         )}
       </View>
     </View>
+  );
+}
+
+/* ------------------------------------------------------------------------- */
+/* Lo que falta (último paso)                                                */
+/* ------------------------------------------------------------------------- */
+
+function Faltan({ falta, onIr }: { falta: ReturnType<typeof faltantes>; onIr?: (paso: number) => void }) {
+  const { colors } = useTheme();
+  const s = useStyles();
+  const iDocs = PASOS.findIndex((p) => p.id === 'documentos');
+  return (
+    <Card style={{ gap: 10, borderColor: colors.accent, backgroundColor: colors.accentSoft }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <TriangleAlert size={18} color={colors.accent} />
+        <Text weight="bold" size={14} style={{ flex: 1 }}>
+          Te falta completar
+        </Text>
+      </View>
+      {falta.pasos.length > 0 && (
+        <View style={{ gap: 6 }}>
+          <Text size={12} weight="semibold" color={colors.mutedForeground}>
+            DATOS
+          </Text>
+          <View style={s.opciones}>
+            {falta.pasos.map((p) => (
+              <Button key={p.paso} size="sm" variant="outline" label={p.titulo} onPress={onIr ? () => onIr(p.paso) : () => {}} disabled={!onIr} accessibilityLabel={`Completar ${p.titulo.toLowerCase()}`} />
+            ))}
+          </View>
+        </View>
+      )}
+      {falta.archivos.length > 0 && (
+        <View style={{ gap: 6 }}>
+          <Text size={12} weight="semibold" color={colors.mutedForeground}>
+            ARCHIVOS
+          </Text>
+          <Text size={13} style={{ lineHeight: 19 }}>
+            {falta.archivos.join(' · ')}
+          </Text>
+          <Button size="sm" variant="outline" icon={FileUp} label="Subir archivos" onPress={onIr ? () => onIr(iDocs) : () => {}} disabled={!onIr} style={{ alignSelf: 'flex-start' }} />
+        </View>
+      )}
+    </Card>
   );
 }
 
@@ -394,7 +482,7 @@ function Col({ children }: { children: ReactNode }) {
 /* Pasos                                                                     */
 /* ------------------------------------------------------------------------- */
 
-function PasoProceso({ anio, d, set, errores, disabled }: CtxPaso & { anio: string }) {
+function PasoProceso({ anio, esFacilitador, proceso, d, set, errores, disabled }: CtxPaso & { anio: string; esFacilitador: boolean; proceso: string }) {
   const { colors } = useTheme();
   const s = useStyles();
   const opciones = [
@@ -405,13 +493,22 @@ function PasoProceso({ anio, d, set, errores, disabled }: CtxPaso & { anio: stri
     <>
       <Seccion>
         <Text size={14} style={{ lineHeight: 22 }}>
-          Con esta postulación le contás a la fundación que querés seguir como facilitador en <Text weight="bold">{anio}</Text>, y actualizás tus datos.
+          {esFacilitador ? (
+            <>
+              Con esta postulación le contás a la fundación que querés seguir como facilitador en <Text weight="bold">{anio}</Text>, y actualizás tus datos.
+            </>
+          ) : (
+            <>
+              Con esta postulación le contás a la fundación que querés ser facilitador en <Text weight="bold">{anio}</Text>.
+            </>
+          )}
         </Text>
         <View style={{ gap: 10 }}>
           {[
-            'Son 8 pasos cortos. Podés ir y volver entre ellos.',
+            `Son ${PASOS.length - 1} pasos cortos. Podés ir y volver entre ellos.`,
             'Tené a mano tu cédula, los datos de tu iglesia y los de tu cuenta bancaria.',
-            'Una vez enviada, la podés corregir cuando quieras durante el año.',
+            'Al final vas a subir, en foto o PDF: una foto carnet, tu cédula, tu CV, los certificados de no agresor y de antecedentes judiciales y policiales, y tus títulos.',
+            'Podés guardarla sin terminar y seguir otro día. Una vez enviada, la podés corregir durante el año.',
           ].map((t) => (
             <View key={t} style={{ flexDirection: 'row', gap: 10 }}>
               <Check size={16} color={colors.success} style={{ marginTop: 2 }} />
@@ -421,6 +518,23 @@ function PasoProceso({ anio, d, set, errores, disabled }: CtxPaso & { anio: stri
             </View>
           ))}
         </View>
+      </Seccion>
+
+      {/* Etapas y requisitos del año: ANIOS_LECTIVOS.PROCESO_POSTULACION. */}
+      <Seccion titulo={`El proceso de postulación ${anio}`} icono={ClipboardList}>
+        {proceso ? (
+          <View style={{ gap: 8 }}>
+            {proceso.split(/\n{2,}/).map((parrafo, i) => (
+              <Text key={i} size={14} style={{ lineHeight: 22 }}>
+                {parrafo}
+              </Text>
+            ))}
+          </View>
+        ) : (
+          <Text size={13} color={colors.mutedForeground} style={{ lineHeight: 20 }}>
+            La coordinación todavía no cargó las etapas y los requisitos de este año. Si tenés dudas, consultá con ella antes de seguir.
+          </Text>
+        )}
       </Seccion>
 
       <Text weight="semibold" size={13}>
@@ -959,11 +1073,112 @@ function PasoCobro(ctx: CtxPaso) {
   );
 }
 
+function PasoDocumentos({ d, set, errores, disabled }: CtxPaso) {
+  const { colors } = useTheme();
+  return (
+    <>
+      <Seccion titulo="Tus documentos" icono={FileUp}>
+        <Text size={13} color={colors.mutedForeground} style={{ lineHeight: 20 }}>
+          Subí una foto clara o un PDF de cada documento. Se suben apenas los elegís. Si te equivocaste, elegilo de nuevo o tocá Quitar: el anterior se borra.
+        </Text>
+      </Seccion>
+      {documentosRequeridos(d).map((doc) => (
+        <TarjetaDocumento key={doc.campo} doc={doc} url={d[doc.campo]} error={errores[doc.campo]} disabled={disabled} onSubido={(u) => set(doc.campo, u)} />
+      ))}
+    </>
+  );
+}
+
+function TarjetaDocumento({ doc, url, error, disabled, onSubido }: { doc: Documento; url: string; error?: string; disabled: boolean; onSubido: (url: string) => void }) {
+  const { colors } = useTheme();
+  const s = useStyles();
+  const [subiendo, setSubiendo] = useState(false);
+  const [falla, setFalla] = useState<string | null>(null);
+
+  const cargar = async (elegir: () => Promise<ArchivoLocal | null>) => {
+    setFalla(null);
+    try {
+      const archivo = await elegir();
+      if (!archivo) return;
+      setSubiendo(true);
+      const anterior = url;
+      onSubido(await subirDocumento(archivo));
+      // El reemplazado se borra de Cloudinary (si una postulación guardada lo usa, al guardar).
+      quitarDocumento(anterior);
+    } catch (e) {
+      setFalla(e instanceof Error ? e.message : 'No se pudo subir el archivo. Probá de nuevo.');
+    } finally {
+      setSubiendo(false);
+    }
+  };
+
+  const ocupado = disabled || subiendo;
+  const mensaje = falla ?? (url ? undefined : error);
+  return (
+    <Card style={[{ gap: 12 }, mensaje ? { borderColor: colors.destructive } : null]}>
+      <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+        <View style={s.docMiniatura}>
+          {subiendo ? (
+            <ActivityIndicator color={colors.primaryText} />
+          ) : url ? (
+            <Image source={{ uri: miniatura(url, 160) }} style={StyleSheet.absoluteFill} contentFit="cover" accessibilityLabel={doc.titulo} />
+          ) : (
+            <FileText size={22} color={colors.mutedForeground} />
+          )}
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text weight="bold" size={14}>
+            {doc.titulo}
+            <Text color={colors.destructive}> *</Text>
+          </Text>
+          <Text size={12} color={colors.mutedForeground} style={{ lineHeight: 17 }}>
+            {subiendo ? 'Subiendo…' : url ? (esPdf(url) ? 'PDF subido.' : 'Foto subida.') : doc.ayuda}
+          </Text>
+          {url && !subiendo ? (
+            <Pressable accessibilityRole="link" accessibilityLabel={`Ver ${doc.titulo.toLowerCase()}`} onPress={() => void Linking.openURL(url)} style={s.enlace}>
+              <ExternalLink size={13} color={colors.primaryText} />
+              <Text size={12} weight="semibold" color={colors.primaryText}>
+                Ver
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+        {url && !subiendo ? <CircleCheck size={20} color={colors.success} accessibilityLabel="Subido" /> : null}
+      </View>
+      <View style={s.opciones}>
+        <Button size="sm" variant={url ? 'outline' : 'default'} icon={Camera} label="Sacar foto" onPress={() => void cargar(() => fotoDeDocumento('camara'))} disabled={ocupado} accessibilityLabel={`Sacar foto: ${doc.titulo}`} />
+        <Button size="sm" variant="outline" icon={ImagePlus} label="Galería" onPress={() => void cargar(() => fotoDeDocumento('galeria'))} disabled={ocupado} accessibilityLabel={`Elegir de la galería: ${doc.titulo}`} />
+        {!doc.soloFoto && <Button size="sm" variant="outline" icon={FileUp} label="PDF" onPress={() => void cargar(pdfDeDocumento)} disabled={ocupado} accessibilityLabel={`Elegir un PDF: ${doc.titulo}`} />}
+        {url ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={Trash2}
+            label="Quitar"
+            onPress={() => {
+              onSubido('');
+              quitarDocumento(url);
+            }}
+            disabled={ocupado}
+            accessibilityLabel={`Quitar ${doc.titulo.toLowerCase()}`}
+          />
+        ) : null}
+      </View>
+      {mensaje ? (
+        <Text accessibilityRole="alert" size={12} color={colors.destructive}>
+          {mensaje}
+        </Text>
+      ) : null}
+    </Card>
+  );
+}
+
 /* ------------------------------------------------------------------------- */
 /* Revisión (también en la pantalla, una vez enviada)                        */
 /* ------------------------------------------------------------------------- */
 
-type Renglon = [string, string];
+/** Etiqueta, valor y, si es un documento, su enlace. */
+type Renglon = [string, string, string?];
 
 export function Resumen({ datos: d, lugar, onEditar }: { datos: Datos; lugar?: { departamento: string; ciudad: string }; onEditar?: (paso: number) => void }) {
   const [lugares, setLugares] = useState<Departamento[] | null>(null);
@@ -1058,6 +1273,13 @@ export function Resumen({ datos: d, lugar, onEditar }: { datos: Datos; lugar?: {
         ['Emisor', [d.factura_emisor, d.ruc ? `RUC ${d.ruc}` : ''].filter(Boolean).join(' · ')],
       ],
     },
+    {
+      paso: 'documentos',
+      renglones: documentosRequeridos(d).map((doc): Renglon => {
+        const url = d[doc.campo];
+        return [doc.titulo, url ? (esPdf(url) ? 'PDF' : 'Foto') : 'Falta subir', url || undefined];
+      }),
+    },
   ];
 
   return (
@@ -1083,7 +1305,7 @@ function BloqueResumen({ titulo, icono: Icono, renglones, onEditar }: { titulo: 
         </Text>
         {onEditar && <Button variant="ghost" size="sm" icon={Pencil} label="Editar" onPress={onEditar} accessibilityLabel={`Editar ${titulo.toLowerCase()}`} />}
       </View>
-      {renglones.map(([k, v]) => (
+      {renglones.map(([k, v, url]) => (
         <View key={k} style={s.renglon}>
           <Text size={12} color={colors.mutedForeground} style={{ width: 130 }}>
             {k}
@@ -1091,6 +1313,14 @@ function BloqueResumen({ titulo, icono: Icono, renglones, onEditar }: { titulo: 
           <Text size={13} weight="medium" style={{ flex: 1 }}>
             {v || '—'}
           </Text>
+          {url ? (
+            <Pressable accessibilityRole="link" accessibilityLabel={`Ver ${k.toLowerCase()}`} onPress={() => void Linking.openURL(url)} style={s.enlace}>
+              <ExternalLink size={13} color={colors.primaryText} />
+              <Text size={12} weight="semibold" color={colors.primaryText}>
+                Ver
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       ))}
     </Card>
@@ -1114,6 +1344,7 @@ const useStyles = makeStyles((c) =>
     buscador: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: c.border, borderRadius: radius.md, backgroundColor: c.card },
     item: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, paddingHorizontal: 12, borderRadius: radius.md },
     enlace: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' },
+    docMiniatura: { width: 64, height: 64, borderRadius: radius.md, borderWidth: 1, borderColor: c.border, backgroundColor: c.muted, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
     dias: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     dia: { width: 64, height: 64, borderRadius: radius.lg, borderWidth: 1, borderColor: c.border, backgroundColor: c.background, alignItems: 'center', justifyContent: 'center', gap: 2 },
     alerta: { flexDirection: 'row', alignItems: 'center', gap: 8 },

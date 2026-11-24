@@ -6,6 +6,7 @@ import { useRouter, type Href } from 'expo-router';
 import { ArrowRight, ArrowUpRight, BookOpen, Building2, CalendarDays, Check, CheckCheck, ChevronRight, CircleSlash, FileText, GraduationCap, type LucideIcon } from 'lucide-react-native';
 
 import { cargarAgenda, clasesDelDia, diaAgenda } from '../agenda';
+import { AvisoPostulacionInicio } from '../aviso-postulacion';
 import { iniciales } from '../data';
 import { useSession } from '../auth/session';
 import { ClaseCard } from '../clase-agenda';
@@ -102,6 +103,9 @@ export function HomeScreen() {
           <Button size="sm" label="Ver mi agenda" iconRight={ArrowRight} onPress={() => router.navigate('/horarios')} style={{ alignSelf: 'flex-start' }} />
         </View>
       </View>
+
+      {/* Postulación sin terminar o con datos/archivos faltantes: solo aparece si falta algo. */}
+      <AvisoPostulacionInicio onCompletar={() => router.navigate('/postulacion')} />
 
       {/* Cumpleaños del día: solo aparece si alguien cumple hoy. */}
       <Cumpleanios />

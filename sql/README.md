@@ -20,7 +20,7 @@ Esa es la URL de `EXPO_PUBLIC_API_URL` en `.env`.
 | [intervenciones_app_ethos.sql](intervenciones_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_INTERVENCIONES_APP_ETHOS` (Marcar, página 2) y publica `mis-intervenciones/*`. No pisa rutas existentes: si alguna ya existe y no es de este paquete, se detiene sin tocar nada. |
 | [formularios_app_ethos.sql](formularios_app_ethos.sql) | **Para correr una vez en APEX.** Crea `PKG_FORMULARIOS_APP_ETHOS` (Form. 1, 2 y 3) y publica `mis-formularios/*`. Solo lectura. No pisa rutas existentes. |
 | [facturas_app_ethos.sql](facturas_app_ethos.sql) | **Para correr una vez en APEX**, después de `cloudinary.sql` y `facturas_facilitadores.sql` del sitio. Crea `PKG_FACTURAS_APP_ETHOS` (Mis facturas) y publica `mis-facturas/*`: el facilitador sube la foto de su factura física. Escribe en `FACTURAS_FACILITADORES`, la misma tabla del sitio. No pisa rutas existentes. |
-| [postulacion_app_ethos.sql](postulacion_app_ethos.sql) | **Para correr una vez en APEX**, con `POSTULANTES_FACILITADORES` ya creada con `ID_FACILITADOR` y su FK (no toca la tabla, solo lo verifica). Crea `PKG_POSTULACION_APP_ETHOS` (Mi postulación) y publica `mi-postulacion/*`. No pisa rutas existentes. |
+| [postulacion_app_ethos.sql](postulacion_app_ethos.sql) | **Para correr en APEX**, con `POSTULANTES_FACILITADORES` ya creada con `ID_FACILITADOR` y su FK, y con `PKG_CLOUDINARY_ETHOS` del sitio. Le agrega a la tabla las 7 columnas de documentos (`*_URL`) si faltan, crea `PKG_POSTULACION_APP_ETHOS` (Mi postulación) y publica `mi-postulacion/*` (4 handlers). No pisa rutas existentes. |
 
 Nada de esto se ejecuta desde la app.
 
@@ -213,20 +213,39 @@ Los scripts ahora crean la ruta **solo si no existe** (miran `USER_ORDS_TEMPLATE
 
 ## Mi postulación (`PKG_POSTULACION_APP_ETHOS`)
 
-El facilitador se postula para el año lectivo en `POSTULANTES_FACILITADORES` (formulario JV26). El `ID_FACILITADOR` lo pone el servidor a partir del token; en las filas del formulario viejo y de postulantes nuevos queda vacío.
+Cualquier usuario con sesión, sea o no facilitador, se postula para el año lectivo en `POSTULANTES_FACILITADORES` (formulario JV26). Ningún handler exige ser facilitador.
+- El servidor pone a partir del token `USUARIO` (login en mayúsculas, columna agregada por el script) y, si es facilitador, `ID_FACILITADOR`. En las filas del formulario viejo los dos pueden quedar vacíos.
+- Cada uno ve solo la suya: `ID_FACILITADOR = el suyo OR USUARIO = el suyo`.
+- Hay una por usuario y año, controlada por el paquete y por el índice único `UX_POSTULANTES_FAC_USUARIO_ANIO`, que es por función e indexa solo las filas con `USUARIO`. Un alta doble a la vez responde 409.
 
 | Método | Ruta | Respuesta |
 |---|---|---|
 | GET | `mi-postulacion` | `{ success, es_facilitador, anio, abierta, facilitador: { nombre, telefono, fecha_nacimiento }, postulacion?, anterior? }`. `postulacion` es la del año abierto; `anterior`, la más reciente de otro año (para precargar). Cada una trae las columnas de la tabla en minúscula, `dias_disponibles` como arreglo, `departamento`, `ciudad`, `anio` y `fecha_registro` (`YYYY-MM-DDTHH:MI`). |
-| POST | `mi-postulacion` | El JSON con las mismas claves → 200 `{ id, nueva, message }` · 400 `{ message, campo }` · 403 no es facilitador · 409 no hay año abierto. Se lee entero de `:body_text` con `APEX_JSON` (son ~60 campos). |
+| POST | `mi-postulacion` | El JSON con las mismas claves → 200 `{ id, nueva, message }` · 400 `{ message, campo }` · 409 no hay año abierto o alta doble. Se lee entero de `:body_text` con `APEX_JSON` (son ~60 campos). |
+| PUT | `mi-postulacion/borrador` | `{ paso, datos }` (datos = el JSON del formulario como texto) → guarda **sin validar** en `POSTULANTES_FAC_BORRADORES` (una por usuario y año). Solo controla que sea JSON y que no pase de 200.000 caracteres. El `GET mi-postulacion` lo devuelve como `borrador: { paso, fecha, datos }`. |
+| DELETE | `mi-postulacion/borrador` | Descarta lo guardado sin terminar y borra sus documentos de Cloudinary que no use ninguna postulación. |
+| DELETE | `mi-postulacion` | Sin cuerpo → `{ message }`. Elimina la del año abierto (la misma que devuelve el GET) y, después del `COMMIT`, sus documentos de Cloudinary que no use otra postulación · 404 no tiene · 409 no hay año abierto, o la referencia otra tabla. |
 | GET | `mi-postulacion/lugares?id_pais=` | `{ id_pais, departamentos: [ { id, nombre, ciudades: [ { id, nombre } ] } ] }`. Vacío = país 1 (Paraguay). |
+| POST | `mi-postulacion/firma-documento` | Sin cuerpo → `{ cloud_name, upload_url, campos: { api_key, timestamp, upload_preset, asset_folder, signature } }` · 409 no hay año abierto · 503 Cloudinary sin configurar. Preset `fcfacilitadores`, carpeta `postulaciones-facilitadores`, `upload_url` `/auto/upload` (fotos y PDF). El `public_id` lo elige el servidor y lo anota en `POSTULANTES_FAC_ARCHIVOS`. |
+| DELETE | `mi-postulacion/documento?url=` | Sin cuerpo → `{ borrado, en_uso?, aviso? }` · 400 enlace no válido · 404 no es un archivo firmado para este usuario. Si una postulación guardada lo usa, no se borra (`en_uso`). |
 
-- **Año:** el lectivo actual (`FN_ANIO_LECTIVO_ACTUAL()`) buscado en `ANIOS_LECTIVOS`. Si no está, `abierta: false`. Se cambia en un solo lugar (`anio_abierto`).
+- **Documentos (24/11/2026):** el script **agrega a `POSTULANTES_FACILITADORES`**, si faltan, 7 columnas `VARCHAR2(500 CHAR)` que aceptan nulos: `FOTO_URL`, `CEDULA_FRENTE_URL`, `CEDULA_DORSO_URL`, `SECUNDARIO_DOC_URL`, `TECNICO_DOC_URL`, `LICENCIATURA_DOC_URL` y `POSGRADO_DOC_URL`. No cambia ninguna columna existente.
+  - Las 4 columnas `CV_ARCHIVO`, `CERTIFICADO_NO_AGRESOR_ARCHIVO`, `ANTECEDENTE_JUDICIAL_ARCHIVO` y `ANTECEDENTE_POLICIAL_ARCHIVO` (`VARCHAR2(1000 CHAR)`) las creó el usuario. El script solo verifica que existan, y guardan el enlace de Cloudinary igual que las `*_URL`.
+  - El POST exige siempre la foto, la cédula, el CV y los tres certificados, y el documento de cada nivel concluido o cursando. Los demás quedan `NULL`. Cada enlace tiene que ser de nuestro cloud (`PKG_CLOUDINARY_ETHOS.es_url_propia`).
+  - **Firma:** el cloud y el `api_key` salen de `PKG_CLOUDINARY_ETHOS.escribir_firma`, escrita a un CLOB. La firma se rehace con el secreto de `CLOUDINARY_CONFIG` (`config('api_secret')` u otros nombres conocidos) y el preset de las postulaciones: SHA-1 de `asset_folder=…&timestamp=…&upload_preset=…` + secreto, con `STANDARD_HASH`.
+  - **Al corregir**, después del `COMMIT`, se borra de Cloudinary cada documento reemplazado que ya no use ninguna postulación (`PKG_CLOUDINARY_ETHOS.borrar`, con llamada dinámica).
+  - **Al quitarlo en la app**, `DELETE mi-postulacion/documento` lo borra si fue firmado para ese usuario (`POSTULANTES_FAC_ARCHIVOS`, tabla solo de la app que crea el script) y ninguna postulación lo usa. Así nadie puede borrar un archivo ajeno, por ejemplo la foto de una factura.
+  - **Ojo:** si algún proceso del sitio hace `INSERT INTO POSTULANTES_FACILITADORES VALUES (...)` sin lista de columnas, deja de funcionar con las columnas nuevas. Con la lista de columnas no pasa nada.
+
+- **Año:** el lectivo actual (`FN_ANIO_LECTIVO_ACTUAL()`) buscado en `ANIOS_LECTIVOS`. Si no está, `anio_registrado: false`. Se cambia en un solo lugar (`anio_abierto`).
+- **Período (solo lectura, se carga desde el admin):** `abierta` = `FN_POSTULACION_ABIERTA(ID_ANIO) = 'SI'`, que mira `PERIODOS_POSTULACION` (`FECHA_INICIO`–`FECHA_FIN` o `HABILITACION_EXTRAORDINARIA = 'SI'`). El `GET` manda también `periodo: { fecha_inicio, fecha_fin, extraordinaria }`.
+  - `POST mi-postulacion`, `PUT mi-postulacion/borrador`, `POST mi-postulacion/firma-documento` y `DELETE mi-postulacion` responden **409** con el período cerrado. Descartar el borrador y quitar un documento propio se permiten igual: solo limpian.
+  - El paquete **no escribe** en `PERIODOS_POSTULACION` ni cambia la función; el script solo verifica que existan e informa si el período está abierto.
 - **Una por facilitador y año**, controlada en el paquete con la fila de `FACILITADORES` bloqueada: si ya existe, el POST la **corrige**. `FECHA_REGISTRO` queda la del primer envío, en hora de Paraguay (`SYSDATE - 3/24`; el `DEFAULT SYSTIMESTAMP` de la tabla es UTC).
 - **"No de acuerdo"** no se envía: el POST solo acepta `DE_ACUERDO`.
 - `EDAD` la calcula el servidor. `DIAS_DISPONIBLES` se guarda como `LUNES,MARTES,...` (sin tildes, en el orden de la semana). `UBICACION_DOMICILIO` es `latitud, longitud` del GPS o el enlace de Google Maps que pegue el facilitador.
 - Valida lo mismo que los `CHECK` (cada nivel de estudio con sus códigos: `CONCLUIDA` en licenciatura, `INCONCLUSA` en licenciatura y posgrado) y lo condicional (título si está concluido o cursando, curso `2/4` si está cursando, empresa y cargo si trabaja, vehículo si tiene movilidad).
-- **Salida esperada del script:** `[OK] PKG_POSTULACION_APP_ETHOS compilado`, `Handlers de mi-postulacion publicados: 3 de 3` y `[OK] Postulacion abierta para <año>`.
+- **Salida esperada del script:** las 8 columnas (7 `*_URL` y `USUARIO`) e `UX_POSTULANTES_FAC_USUARIO_ANIO` con `[OK]`, `[OK] PKG_POSTULACION_APP_ETHOS compilado`, `Handlers de mi-postulacion publicados: 8 de 8`, `[OK] Tabla POSTULANTES_FAC_BORRADORES`, `[OK] Tabla POSTULANTES_FAC_ARCHIVOS`, `[OK] Cloudinary configurado: … (preset fcfacilitadores)` y `[OK] Postulacion abierta para <año>`. Si sale `[WARN] No se encontro el secreto…`, hacen falta los nombres de las claves de `CLOUDINARY_CONFIG`, sin los valores.
 
 ## CORS
 
