@@ -490,9 +490,12 @@ En iPhone la app se usa como PWA (aplicación web) desde **https://facilitadores
    | A | `@` | `185.199.111.153` |
    | CNAME | `www` | `josegalvez1985.github.io` |
 
-3. **Settings → Pages → Custom domain**: `facilitadoresfc.online`. Con despliegue por Actions el archivo `CNAME` no alcanza: hay que cargarlo ahí. Cuando GitHub emita el certificado, tildar **Enforce HTTPS** (la PWA y la ubicación necesitan HTTPS).
+3. **Settings → Pages → Custom domain**: `www.facilitadoresfc.online` (el principal; `facilitadoresfc.online` redirige ahí). Con despliegue por Actions el archivo `CNAME` no alcanza: hay que cargarlo ahí. Cuando GitHub emita el certificado, tildar **Enforce HTTPS** (la PWA y la ubicación necesitan HTTPS).
 4. Correr el workflow **Web** (pestaña Actions → **Run workflow**) o hacer un push.
 
+- **Al compartir el enlace** (WhatsApp, Facebook, Telegram…) se ve el logo, el nombre y la descripción: son las etiquetas Open Graph de `public/index.html`, con la URL absoluta de `public/logo.png`. Esos bots no ejecutan JavaScript, por eso van en el HTML. WhatsApp guarda la vista previa de cada enlace un tiempo; para probar un cambio, compartí la URL con algo distinto al final (`?v=2`). Facebook la vuelve a leer con su *Sharing Debugger*.
+- **Google:** el ícono de los resultados es el favicon (`favicon.png` 48 px y `logo192.png`), y el nombre del sitio sale del bloque `WebSite` (JSON-LD) de `index.html`. `sitemap.xml` y `robots.txt` lo invitan a indexar la portada. Para que aparezca antes: [Google Search Console](https://search.google.com/search-console) → agregar la propiedad `facilitadoresfc.online` (tipo *Dominio*, se verifica con un registro TXT en el DNS) → **Sitemaps** → `https://www.facilitadoresfc.online/sitemap.xml` → **Inspección de URLs** → la portada → **Solicitar indexación**. Google tarda de días a semanas en mostrar el ícono.
+- Si se cambia el dominio principal, cambiar también esas URLs en `index.html`, `sitemap.xml` y `robots.txt`.
 - La app se sirve en la **raíz** del dominio. En `josegalvez1985.github.io/facilitador-hub/` no carga, porque los archivos se piden a `/`.
 - GitHub Pages en un repositorio **privado** necesita un plan pago de GitHub.
 - Si después de publicar el login da "blocked by CORS policy", revisar en ORDS que el módulo `ethos` acepte el origen `https://facilitadoresfc.online`.

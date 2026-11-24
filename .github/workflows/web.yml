@@ -7,7 +7,10 @@
 #
 # Una sola vez, en GitHub:
 #   - Settings > Pages > Build and deployment > Source: "GitHub Actions".
-#   - Settings > Pages > Custom domain: facilitadoresfc.online, y después
+#   - Settings > Pages > Custom domain: www.facilitadoresfc.online (el dominio
+#     principal; facilitadoresfc.online redirige ahí). Si se cambia, cambiar también
+#     las URLs de public/index.html (vista previa al compartir), sitemap.xml y
+#     robots.txt. Después,
 #     "Enforce HTTPS" cuando GitHub termine de emitir el certificado.
 #     Con despliegue por Actions el archivo CNAME del sitio NO configura el
 #     dominio: hay que cargarlo ahí. El CNAME se publica igual, como respaldo.
@@ -73,7 +76,7 @@ jobs:
         run: |
           cp dist/index.html dist/404.html
           touch dist/.nojekyll
-          echo "facilitadoresfc.online" > dist/CNAME
+          echo "www.facilitadoresfc.online" > dist/CNAME
           ls -la dist
 
       - uses: actions/configure-pages@v5
@@ -90,7 +93,7 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: https://facilitadoresfc.online
+      url: https://www.facilitadoresfc.online
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
