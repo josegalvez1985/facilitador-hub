@@ -315,6 +315,58 @@ BEGIN
 END;
 /
 
+-- ESTADO acepta tambien INCOMPLETO: la postulacion guardada sin terminar, que los
+-- administradores ya ven (Jose, 24/11/2026). La CHECK original de la tabla
+-- (PENDIENTE, APROBADA, RECHAZADA) tiene nombre de sistema (SYS_C...): se busca
+-- por su condicion, se borra y se crea CK_POSTULANTES_FAC_ESTADO con los cuatro.
+-- Si ya existe, no se toca. Las filas actuales cumplen la nueva (es mas amplia).
+DECLARE
+  l_n PLS_INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO l_n FROM USER_CONSTRAINTS
+   WHERE TABLE_NAME = 'POSTULANTES_FACILITADORES' AND CONSTRAINT_NAME = 'CK_POSTULANTES_FAC_ESTADO';
+  IF l_n > 0 THEN
+    DBMS_OUTPUT.PUT_LINE('[OK]   CK_POSTULANTES_FAC_ESTADO ya existia: ESTADO acepta INCOMPLETO.');
+  ELSE
+    -- "estado IN (...)" y no "estado_civil IN (...)": la condicion empieza con la columna.
+    FOR c IN (SELECT CONSTRAINT_NAME, SEARCH_CONDITION_VC AS cond FROM USER_CONSTRAINTS
+               WHERE TABLE_NAME = 'POSTULANTES_FACILITADORES' AND CONSTRAINT_TYPE = 'C') LOOP
+      IF REGEXP_LIKE(c.cond, '^[[:space:]]*"?estado"?[[:space:]]+in[[:space:]]*\(', 'i') THEN
+        EXECUTE IMMEDIATE 'ALTER TABLE POSTULANTES_FACILITADORES DROP CONSTRAINT "' || c.CONSTRAINT_NAME || '"';
+        DBMS_OUTPUT.PUT_LINE('[OK]   CHECK anterior de ESTADO borrada (' || c.CONSTRAINT_NAME || '): ' || c.cond);
+      END IF;
+    END LOOP;
+    EXECUTE IMMEDIATE q'[ALTER TABLE POSTULANTES_FACILITADORES ADD CONSTRAINT CK_POSTULANTES_FAC_ESTADO
+                         CHECK (ESTADO IN ('PENDIENTE', 'APROBADA', 'RECHAZADA', 'INCOMPLETO'))]';
+    DBMS_OUTPUT.PUT_LINE('[OK]   CK_POSTULANTES_FAC_ESTADO creada: ESTADO acepta PENDIENTE, APROBADA, RECHAZADA e INCOMPLETO.');
+  END IF;
+  EXECUTE IMMEDIATE q'[COMMENT ON COLUMN POSTULANTES_FACILITADORES.ESTADO IS 'Estado de la postulación: INCOMPLETO (guardada sin terminar desde la app facilitadores, todavía no enviada), PENDIENTE (enviada, por revisar), APROBADA o RECHAZADA (revisión del administrador).']';
+END;
+/
+
+-- NOMBRE_COMPLETO y CEDULA dejan de ser NOT NULL (Jose, 24/11/2026): la
+-- postulacion guardada sin terminar (INCOMPLETO) aparece para los
+-- administradores aunque todavia no tenga esos datos. Para ENVIARLA siguen
+-- siendo obligatorios: lo valida el paquete (leer_formulario en modo estricto).
+-- Solo se cambia si hoy son NOT NULL; correrlo de nuevo no hace nada.
+DECLARE
+  l_nullable VARCHAR2(1);
+BEGIN
+  FOR c IN (SELECT COLUMN_VALUE AS col FROM TABLE(SYS.ODCIVARCHAR2LIST('NOMBRE_COMPLETO', 'CEDULA'))) LOOP
+    SELECT MAX(NULLABLE) INTO l_nullable FROM USER_TAB_COLUMNS
+     WHERE TABLE_NAME = 'POSTULANTES_FACILITADORES' AND COLUMN_NAME = c.col;
+    IF l_nullable IS NULL THEN
+      DBMS_OUTPUT.PUT_LINE('[ERROR] Falta la columna POSTULANTES_FACILITADORES.' || c.col);
+    ELSIF l_nullable = 'N' THEN
+      EXECUTE IMMEDIATE 'ALTER TABLE POSTULANTES_FACILITADORES MODIFY (' || c.col || ' NULL)';
+      DBMS_OUTPUT.PUT_LINE('[OK]   ' || c.col || ' ahora acepta vacio (guardar sin terminar). Para enviar sigue siendo obligatoria.');
+    ELSE
+      DBMS_OUTPUT.PUT_LINE('[OK]   ' || c.col || ' ya aceptaba vacio.');
+    END IF;
+  END LOOP;
+END;
+/
+
 -- Columnas que la app NO escribe (ESTADO y las del administrador): en el alta
 -- toman su DEFAULT. Si alguna es NOT NULL y no tiene DEFAULT, el envio falla con
 -- ORA-01400: aca se avisa antes. DATA_DEFAULT es LONG, por eso se lee en PL/SQL.
@@ -348,10 +400,11 @@ BEGIN
       END IF;
     ELSIF c.NULLABLE = 'N'
           AND c.COLUMN_NAME NOT IN ('ID', 'ESTADO', 'ID_ANIO', 'USUARIO', 'FECHA_REGISTRO', 'ACEPTA_PROCESO') THEN
-      -- Del formulario y obligatoria en la tabla: guardar SIN TERMINAR (INCOMPLETO)
-      -- sin ese dato falla con "Para guardar falta un dato obligatorio".
-      DBMS_OUTPUT.PUT_LINE('[WARN] ' || c.COLUMN_NAME || ' es NOT NULL: guardar sin terminar pide '
-                           || 'ese dato (o quitarle el NOT NULL para guardar a medias).');
+      -- Del formulario y obligatoria en la tabla (el bloque anterior ya les saco
+      -- el NOT NULL a NOMBRE_COMPLETO y CEDULA): guardar sin terminar falla
+      -- mientras falte ese dato.
+      DBMS_OUTPUT.PUT_LINE('[WARN] ' || c.COLUMN_NAME || ' es NOT NULL: guardar sin terminar falla '
+                           || 'mientras falte ese dato (sacarle el NOT NULL como a NOMBRE_COMPLETO y CEDULA).');
     END IF;
   END LOOP;
 END;
@@ -1063,9 +1116,10 @@ BEGIN
         falla('id_ciudad', 'La ciudad no es del departamento elegido');
         r.ID_CIUDAD := NULL;
     END IF;
-    -- Un departamento que no existe tampoco se guarda (la FK lo rechazaria).
+    -- Un departamento que no existe tampoco se guarda (POSTULANTES_FAC_FK_DEPARTAMENTOS
+    -- lo rechazaria).
     IF r.ID_DEPARTAMENTO IS NOT NULL THEN
-        SELECT COUNT(*) INTO l_n FROM CIUDADES
+        SELECT COUNT(*) INTO l_n FROM DEPARTAMENTOS
          WHERE ID_PAIS = r.ID_PAIS AND ID_DEPARTAMENTO = r.ID_DEPARTAMENTO;
         IF l_n = 0 THEN
             falla('id_departamento', 'El departamento no existe');
@@ -1331,6 +1385,18 @@ BEGIN
     limpiar(p.ANTECEDENTE_POLICIAL_ARCHIVO);
 END limpiar_fila;
 
+-- Para un ORA-02290: la condicion de la CHECK que fallo, para que el mensaje diga
+-- que dato fue y no solo "SYS_C00206268478" (24/11/2026). NULL si no se encuentra.
+FUNCTION regla_check(p_sqlerrm IN VARCHAR2) RETURN VARCHAR2 IS
+    l_nombre VARCHAR2(128) := REGEXP_SUBSTR(p_sqlerrm, '\.([A-Za-z0-9_$#]+)\)', 1, 1, NULL, 1);
+    l_cond   VARCHAR2(4000);
+BEGIN
+    SELECT SEARCH_CONDITION_VC INTO l_cond FROM USER_CONSTRAINTS WHERE CONSTRAINT_NAME = l_nombre;
+    RETURN l_cond;
+EXCEPTION
+    WHEN OTHERS THEN RETURN NULL;
+END regla_check;
+
 /* -------------------------------------------------------------------------- */
 /* POST mi-postulacion                                                        */
 /* -------------------------------------------------------------------------- */
@@ -1397,7 +1463,7 @@ EXCEPTION
     WHEN OTHERS THEN
         ROLLBACK;
         IF SQLCODE = -2290 THEN
-            p_error(400, 'Bad Request', 'Hay una opcion no valida: ' || SQLERRM);
+            p_error(400, 'Bad Request', 'Hay una opcion no valida (' || NVL(regla_check(SQLERRM), SQLERRM) || ')');
         ELSIF SQLCODE = -2291 THEN
             p_error(400, 'Bad Request', 'El departamento o la ciudad no existen', 'id_ciudad');
         ELSE
@@ -1705,6 +1771,8 @@ BEGIN
             r.ID_FACILITADOR := l_fac;
             r.USUARIO        := l_usuario;
             r.ID_ANIO        := l_id_anio;
+            -- NOMBRE_COMPLETO y CEDULA aceptan vacio (el script les saca el NOT
+            -- NULL): la fila aparece desde el primer Guardar con acuerdo.
             grabar(r, FALSE, l_viejo, l_escrita, l_primera);
         END IF;
     END IF;
@@ -1728,7 +1796,7 @@ EXCEPTION
             -- Una columna obligatoria de la tabla que todavia no se cargo.
             p_error(400, 'Bad Request', 'Para guardar falta un dato obligatorio: ' || SQLERRM);
         ELSIF SQLCODE = -2290 THEN
-            p_error(400, 'Bad Request', 'Hay una opcion no valida: ' || SQLERRM);
+            p_error(400, 'Bad Request', 'Hay una opcion no valida (' || NVL(regla_check(SQLERRM), SQLERRM) || ')');
         ELSE
             p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
         END IF;

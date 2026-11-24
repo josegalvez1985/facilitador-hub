@@ -364,13 +364,15 @@ type CtxPaso = {
   disabled: boolean;
 };
 
+// Sin asterisco (24/11/2026): nada es obligatorio para GUARDAR. Lo que no hace falta ni para
+// enviar lleva "(opcional)"; lo que falta para enviar se lista en el último paso y en Inicio.
 function Pregunta({ etiqueta, requerido = true, ayuda, error, children }: { etiqueta: string; requerido?: boolean; ayuda?: string; error?: string; children: ReactNode }) {
   const { colors } = useTheme();
   return (
     <View style={{ gap: 8 }}>
       <Text weight="semibold" size={13}>
         {etiqueta}
-        {requerido ? <Text color={colors.destructive}> *</Text> : <Text size={12} color={colors.mutedForeground}> (opcional)</Text>}
+        {requerido ? null : <Text size={12} color={colors.mutedForeground}> (opcional)</Text>}
       </Text>
       {children}
       {ayuda && !error ? (
@@ -542,7 +544,7 @@ function PasoProceso({ anio, esFacilitador, proceso, d, set, errores, disabled }
       </Seccion>
 
       <Text weight="semibold" size={13}>
-        ¿Leíste las etapas y los requisitos del proceso y estás de acuerdo?<Text color={colors.destructive}> *</Text>
+        ¿Leíste las etapas y los requisitos del proceso y estás de acuerdo?
       </Text>
       <View style={s.tarjetasOpcion} accessibilityRole="radiogroup">
         {opciones.map((o) => {
@@ -1133,7 +1135,6 @@ function TarjetaDocumento({ doc, url, error, disabled, onSubido }: { doc: Docume
         <View style={{ flex: 1, gap: 3 }}>
           <Text weight="bold" size={14}>
             {doc.titulo}
-            <Text color={colors.destructive}> *</Text>
           </Text>
           <Text size={12} color={colors.mutedForeground} style={{ lineHeight: 17 }}>
             {subiendo ? 'Subiendo…' : url ? (esPdf(url) ? 'PDF subido.' : 'Foto subida.') : doc.ayuda}

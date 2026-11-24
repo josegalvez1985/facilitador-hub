@@ -165,7 +165,7 @@ Acá te postulás para el año lectivo: para seguir como facilitador, o para emp
 1. Abrí **Menú** y tocá **Mi postulación**.
 2. Tocá **Empezar mi postulación**. Si ya sos facilitador, el formulario arranca con los datos que la fundación tiene de vos: revisalos y corregí lo que haya cambiado. Si ya te postulaste otro año, tocá **Usar mis datos de** ese año: el formulario arranca completo y solo cambiás lo que haya cambiado.
 3. En **El proceso** leé las etapas y los requisitos de este año. Para seguir tenés que tocar **Estoy de acuerdo**.
-4. Completá los pasos: **El proceso**, **Datos personales**, **Domicilio**, **Estudios**, **Trabajo y recursos**, **Disponibilidad**, **Iglesia**, **Cobro** y **Documentos**. Tocá **Siguiente** para pasar al próximo. Si falta algo, el campo se marca en rojo.
+4. Completá los pasos: **El proceso**, **Datos personales**, **Domicilio**, **Estudios**, **Trabajo y recursos**, **Disponibilidad**, **Iglesia**, **Cobro** y **Documentos**. Tocá **Siguiente** para pasar al próximo. Podés tocar **Guardar** en cualquier momento, aunque falten datos, y terminarla después. Para enviarla tiene que estar todo completo, salvo lo marcado **(opcional)**: en el último paso ves qué falta.
 5. En **Revisar y enviar** mirá el resumen. Con **Editar** volvés a cualquier sección.
 6. Tocá **Enviar postulación**.
 
