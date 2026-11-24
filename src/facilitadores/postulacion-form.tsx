@@ -86,7 +86,7 @@ import {
   type Opcion,
   type PasoId,
 } from './postulacion';
-import { useSubirAlInicio } from './shell';
+import { useLayout, useSubirAlInicio } from './shell';
 import { radius } from './theme';
 import { makeStyles, useTheme } from './theme-provider';
 import { useToast } from './toast';
@@ -200,6 +200,10 @@ export function FormularioPostulacion({ anio, esFacilitador, proceso, datosInici
   };
 
   const ctx: CtxPaso = { d, set, errores, disabled: enviando };
+  // Celular: el botón principal ocupa lo que deja "Atrás", y si no entra (por ejemplo
+  // "Guardar y terminar después" en 360 px) baja a su propio renglón con todo el ancho.
+  const { desktop } = useLayout();
+  const principal = desktop ? undefined : s.principalCelular;
 
   return (
     <View style={{ gap: 16, maxWidth: 720, width: '100%' }}>
@@ -254,12 +258,12 @@ export function FormularioPostulacion({ anio, esFacilitador, proceso, datosInici
         {paso > 0 ? <Button variant="outline" icon={ArrowLeft} label="Atrás" onPress={() => ir(paso - 1)} disabled={enviando} /> : <View />}
         {ultimo ? (
           completa ? (
-            <Button size="lg" icon={Send} label={enviando ? 'Enviando…' : esCorreccion ? 'Guardar cambios' : 'Enviar postulación'} onPress={() => void enviar()} disabled={enviando} />
+            <Button size="lg" icon={Send} label={enviando ? 'Enviando…' : esCorreccion ? 'Guardar cambios' : 'Enviar postulación'} onPress={() => void enviar()} disabled={enviando} style={principal} />
           ) : (
-            <Button size="lg" icon={Save} label={enviando ? 'Guardando…' : 'Guardar y terminar después'} onPress={() => void guardar(true)} disabled={enviando || noDeAcuerdo} />
+            <Button size="lg" icon={Save} label={enviando ? 'Guardando…' : 'Guardar y terminar después'} onPress={() => void guardar(true)} disabled={enviando || noDeAcuerdo} style={principal} />
           )
         ) : (
-          <Button size="lg" iconRight={ArrowRight} label="Siguiente" onPress={siguiente} disabled={enviando || (actual.id === 'proceso' && noDeAcuerdo)} />
+          <Button size="lg" iconRight={ArrowRight} label="Siguiente" onPress={siguiente} disabled={enviando || (actual.id === 'proceso' && noDeAcuerdo)} style={principal} />
         )}
       </View>
     </View>
@@ -1348,7 +1352,8 @@ const useStyles = makeStyles((c) =>
     dias: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     dia: { width: 64, height: 64, borderRadius: radius.lg, borderWidth: 1, borderColor: c.border, backgroundColor: c.background, alignItems: 'center', justifyContent: 'center', gap: 2 },
     alerta: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    navegacion: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 4 },
+    navegacion: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 4 },
+    principalCelular: { flexGrow: 1, paddingHorizontal: 18 },
     renglon: { flexDirection: 'row', gap: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: c.border },
   }),
 );
