@@ -103,9 +103,12 @@ export function adoptarSesion(s: Sesion | null) {
  * quedarse sin señal no dice nada del token.
  * ------------------------------------------------------------------------- */
 export class SinConexion extends Error {
-  constructor() {
+  /** El error original de fetch, para mostrarlo donde sirva (p. ej. la subida a Cloudinary). */
+  readonly causa: unknown;
+  constructor(causa?: unknown) {
     super('Sin conexión con el servidor. Revisá tu red.');
     this.name = 'SinConexion';
+    this.causa = causa;
   }
 }
 
@@ -117,8 +120,8 @@ export function esSinConexion(e: unknown): e is SinConexion {
 async function pedir(input: string, init: RequestInit): Promise<Response> {
   try {
     return await fetch(input, conIdentidad(init));
-  } catch {
-    throw new SinConexion();
+  } catch (e) {
+    throw new SinConexion(e);
   }
 }
 

@@ -143,6 +143,31 @@ jobs:
           grep -E "^(reactNativeArchitectures|org.gradle.jvmargs|android.enableMinifyInReleaseBuilds)=" android/gradle.properties
           grep -n "checkReleaseBuilds" android/app/build.gradle
 
+      # NDK: si no viene en el runner, Gradle lo descarga en medio de la compilación,
+      # sin reintentos, y una falla de red cortaba todo ("Failed to install the
+      # following SDK components: ndk;27.1.12297006", 24/11/2026). Se instala antes
+      # con sdkmanager, con reintentos, en la versión que pide el proyecto generado.
+      - name: Instalar el NDK
+        run: |
+          NDK=$(grep -hoE 'ndkVersion *= *"[^"]+"' android/build.gradle android/app/build.gradle 2>/dev/null | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          NDK=${NDK:-27.1.12297006}
+          echo "NDK que pide el proyecto: $NDK"
+          if [ -d "$ANDROID_HOME/ndk/$NDK" ]; then
+            echo "Ya estaba instalado en el runner."
+            exit 0
+          fi
+          SDKMANAGER=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          for i in 1 2 3 4; do
+            if yes | "$SDKMANAGER" --install "ndk;$NDK" > /dev/null; then break; fi
+            echo "::warning::Intento $i de instalar el NDK falló; reintento en $((i * 20)) s."
+            sleep $((i * 20))
+          done
+          if [ ! -d "$ANDROID_HOME/ndk/$NDK" ]; then
+            echo "::error::No se pudo instalar el NDK $NDK después de 4 intentos (falla de red de Google). Volvé a correr el workflow."
+            exit 1
+          fi
+          echo "NDK $NDK instalado."
+
       - name: Compilar APK
         env:
           NODE_ENV: production

@@ -346,6 +346,12 @@ BEGIN
         DBMS_OUTPUT.PUT_LINE('[OK]   ' || c.COLUMN_NAME || ': la app no la escribe; en el alta toma '
                              || NVL(l_def, 'NULL') || '.');
       END IF;
+    ELSIF c.NULLABLE = 'N'
+          AND c.COLUMN_NAME NOT IN ('ID', 'ESTADO', 'ID_ANIO', 'USUARIO', 'FECHA_REGISTRO', 'ACEPTA_PROCESO') THEN
+      -- Del formulario y obligatoria en la tabla: guardar SIN TERMINAR (INCOMPLETO)
+      -- sin ese dato falla con "Para guardar falta un dato obligatorio".
+      DBMS_OUTPUT.PUT_LINE('[WARN] ' || c.COLUMN_NAME || ' es NOT NULL: guardar sin terminar pide '
+                           || 'ese dato (o quitarle el NOT NULL para guardar a medias).');
     END IF;
   END LOOP;
 END;
@@ -394,6 +400,10 @@ c_largo_url    CONSTANT PLS_INTEGER  := 500;
 -- ESTADO con el que entra una postulacion enviada desde la app (Jose, 24/11/2026).
 -- Despues lo cambia el administrador; una correccion no se lo pisa.
 c_estado_inicial CONSTANT VARCHAR2(30) := 'PENDIENTE';
+-- ESTADO de la guardada SIN TERMINAR (Guardar / Guardar y terminar despues), para
+-- que los administradores ya vean lo cargado (Jose, 24/11/2026). Al enviarla pasa
+-- a PENDIENTE. La app la sigue mostrando como "sin enviar".
+c_estado_borrador CONSTANT VARCHAR2(30) := 'INCOMPLETO';
 -- Cloudinary: preset Signed de las postulaciones y su carpeta.
 c_preset_docs  CONSTANT VARCHAR2(60) := 'fcfacilitadores';
 c_carpeta_docs CONSTANT VARCHAR2(60) := 'postulaciones-facilitadores';
@@ -412,6 +422,10 @@ c_largo_borrador CONSTANT PLS_INTEGER := 200000;
 e_dato    EXCEPTION;
 g_campo   VARCHAR2(60);
 g_mensaje VARCHAR2(400);
+-- Modo suave (guardar sin terminar): falla() no corta y el dato queda NULL. Cada
+-- procedimiento que lo usa lo vuelve a FALSE, tambien si falla: la sesion de ORDS
+-- se reutiliza y un TRUE olvidado dejaria enviar una postulacion sin validar.
+g_suave   BOOLEAN := FALSE;
 
 -- Los encabezados CORS los pone ORDS: no repetirlos.
 PROCEDURE abrir_json IS
@@ -446,6 +460,7 @@ END error_htp;
 
 PROCEDURE falla(p_campo IN VARCHAR2, p_mensaje IN VARCHAR2) IS
 BEGIN
+    IF g_suave THEN RETURN; END IF;
     g_campo   := p_campo;
     g_mensaje := p_mensaje;
     RAISE e_dato;
@@ -514,6 +529,7 @@ BEGIN
     END IF;
     IF LENGTH(l_v) > p_largo THEN
         falla(p_campo, p_etiqueta || ': hasta ' || p_largo || ' caracteres');
+        RETURN NULL; -- solo en modo suave
     END IF;
     RETURN l_v;
 END texto;
@@ -530,6 +546,7 @@ BEGIN
     END IF;
     IF INSTR(',' || p_valores || ',', ',' || l_v || ',') = 0 THEN
         falla(p_campo, p_etiqueta || ': opcion no valida');
+        RETURN NULL; -- solo en modo suave
     END IF;
     RETURN l_v;
 END opcion;
@@ -539,6 +556,7 @@ FUNCTION telefono(p_campo IN VARCHAR2, p_etiqueta IN VARCHAR2) RETURN VARCHAR2 I
 BEGIN
     IF NOT REGEXP_LIKE(l_v, '^\+?[0-9 ()-]{6,}$') THEN
         falla(p_campo, p_etiqueta || ': solo numeros, espacios, guiones o +');
+        RETURN NULL; -- solo en modo suave
     END IF;
     RETURN l_v;
 END telefono;
@@ -549,6 +567,7 @@ FUNCTION cedula(p_campo IN VARCHAR2, p_etiqueta IN VARCHAR2) RETURN VARCHAR2 IS
 BEGIN
     IF NOT REGEXP_LIKE(l_v, '^[0-9]{3,15}$') THEN
         falla(p_campo, p_etiqueta || ': solo numeros');
+        RETURN NULL; -- solo en modo suave
     END IF;
     RETURN l_v;
 END cedula;
@@ -569,6 +588,7 @@ BEGIN
         o_anio := REPLACE(texto(p_prefijo || '_anio', 'curso actual de ' || p_etiqueta, 10), ' ', '');
         IF NOT REGEXP_LIKE(o_anio, '^[0-9]{1,2}/[0-9]{1,2}$') THEN
             falla(p_prefijo || '_anio', 'Curso actual de ' || p_etiqueta || ': como 2/4 (el que cursas y el total)');
+            o_anio := NULL; -- solo en modo suave
         END IF;
     END IF;
 END estudio;
@@ -582,9 +602,11 @@ BEGIN
     l_v := TRIM(APEX_JSON.GET_VARCHAR2(p_path => p_campo));
     IF l_v IS NULL THEN
         falla(p_campo, 'Falta subir: ' || p_etiqueta);
+        RETURN NULL; -- solo en modo suave
     END IF;
     IF LENGTH(l_v) > c_largo_url OR NOT PKG_CLOUDINARY_ETHOS.es_url_propia(l_v) THEN
         falla(p_campo, p_etiqueta || ': el archivo no es valido, volve a subirlo');
+        RETURN NULL; -- solo en modo suave
     END IF;
     RETURN l_v;
 END documento;
@@ -824,11 +846,14 @@ BEGIN
     END LOOP;
 
     -- Solo SUS postulaciones: por su ID_FACILITADOR (si es facilitador) o por
-    -- su USUARIO (las que cargo desde la app, sea o no facilitador).
+    -- su USUARIO (las que cargo desde la app, sea o no facilitador). Las
+    -- INCOMPLETO (guardadas sin terminar) no cuentan como enviadas: la app las
+    -- retoma desde el borrador.
     IF l_id_anio IS NOT NULL THEN
         BEGIN
             SELECT * INTO l_actual FROM POSTULANTES_FACILITADORES
              WHERE (ID_FACILITADOR = l_fac OR USUARIO = l_usuario) AND ID_ANIO = l_id_anio
+               AND NVL(ESTADO, '-') <> c_estado_borrador
              ORDER BY CASE WHEN USUARIO = l_usuario THEN 0 ELSE 1 END, ID DESC
              FETCH FIRST 1 ROWS ONLY;
             l_hay_act := TRUE;
@@ -840,6 +865,7 @@ BEGIN
         SELECT * INTO l_anterior FROM POSTULANTES_FACILITADORES
          WHERE (ID_FACILITADOR = l_fac OR USUARIO = l_usuario)
            AND (l_id_anio IS NULL OR ID_ANIO <> l_id_anio)
+           AND NVL(ESTADO, '-') <> c_estado_borrador
          ORDER BY FECHA_REGISTRO DESC, ID DESC FETCH FIRST 1 ROWS ONLY;
         l_hay_ant := TRUE;
     EXCEPTION
@@ -968,43 +994,25 @@ EXCEPTION
 END lugares;
 
 /* -------------------------------------------------------------------------- */
-/* POST mi-postulacion                                                        */
+/* Lectura del formulario y escritura en POSTULANTES_FACILITADORES            */
 /* -------------------------------------------------------------------------- */
 
-PROCEDURE guardar(p_token IN VARCHAR2, p_body IN CLOB) IS
-    l_fac     NUMBER;
-    l_id_anio NUMBER;
-    l_anio    VARCHAR2(40);
-    l_id      NUMBER;
+-- Lee del JSON ya parseado (APEX_JSON global) las columnas del formulario.
+-- Estricto (g_suave = FALSE, al ENVIAR): el primer dato que falta o no es
+-- valido corta con e_dato (campo y mensaje). Suave (g_suave = TRUE, al GUARDAR
+-- sin terminar; Jose, 24/11/2026): ese dato queda NULL y se sigue, asi los
+-- administradores ven lo cargado. Despues de cada falla() el campo se deja en
+-- NULL: en modo estricto esa linea no se alcanza.
+PROCEDURE leer_formulario(r IN OUT NOCOPY POSTULANTES_FACILITADORES%ROWTYPE) IS
     l_n       PLS_INTEGER;
     l_dia     VARCHAR2(4000);
     l_elegido VARCHAR2(4000) := ',';
-    r         POSTULANTES_FACILITADORES%ROWTYPE;
-    l_viejo   POSTULANTES_FACILITADORES%ROWTYPE;
-    l_usuario VARCHAR2(255);
 BEGIN
-    IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
-
-    anio_abierto(l_id_anio, l_anio);
-    IF l_id_anio IS NULL THEN
-        p_error(409, 'Conflict', 'No hay un año lectivo abierto para postularse'); RETURN;
-    END IF;
-    IF NOT periodo_abierto(l_id_anio) THEN
-        p_error(409, 'Conflict', 'El periodo de postulacion esta cerrado: ya no se pueden cargar ni modificar postulaciones'); RETURN;
-    END IF;
-
-    BEGIN
-        APEX_JSON.PARSE(p_source => p_body);
-    EXCEPTION
-        WHEN OTHERS THEN
-            p_error(400, 'Bad Request', 'Los datos enviados no son validos'); RETURN;
-    END;
-
-    -- 1. El proceso: sin acuerdo no se registra nada.
-    IF opcion('acepta_proceso', 'acuerdo con el proceso', 'DE_ACUERDO,NO_DE_ACUERDO') <> 'DE_ACUERDO' THEN
+    -- 1. El proceso: sin acuerdo no se registra nada (el que llama lo controla en modo suave).
+    r.ACEPTA_PROCESO := opcion('acepta_proceso', 'acuerdo con el proceso', 'DE_ACUERDO,NO_DE_ACUERDO');
+    IF NVL(r.ACEPTA_PROCESO, '-') <> 'DE_ACUERDO' THEN
         falla('acepta_proceso', 'Para postularte tenes que estar de acuerdo con el proceso');
     END IF;
-    r.ACEPTA_PROCESO := 'DE_ACUERDO';
 
     -- 2. Datos personales.
     r.NOMBRE_COMPLETO := texto('nombre_completo', 'nombre completo', 200);
@@ -1020,14 +1028,18 @@ BEGIN
     r.EDAD := TRUNC(MONTHS_BETWEEN(TRUNC(ahora), r.FECHA_NACIMIENTO) / 12);
     IF r.EDAD < c_edad_minima OR r.EDAD > c_edad_maxima THEN
         falla('fecha_nacimiento', 'Revisa la fecha de nacimiento');
+        r.FECHA_NACIMIENTO := NULL;
+        r.EDAD := NULL;
     END IF;
     r.NACIONALIDAD       := texto('nacionalidad', 'nacionalidad', 100);
     r.TELEFONO           := telefono('telefono', 'telefono');
     r.CORREO_ELECTRONICO := LOWER(texto('correo_electronico', 'correo electronico', 200));
     IF NOT REGEXP_LIKE(r.CORREO_ELECTRONICO, '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$') THEN
         falla('correo_electronico', 'El correo electronico no es valido');
+        r.CORREO_ELECTRONICO := NULL;
     END IF;
     r.ESTADO_CIVIL := opcion('estado_civil', 'estado civil', 'SOLTERO,CASADO,OTROS');
+    r.ESTADO_CIVIL_OTRO := NULL;
     IF r.ESTADO_CIVIL = 'OTROS' THEN
         r.ESTADO_CIVIL_OTRO := texto('estado_civil_otro', 'cual es tu estado civil', 100);
     END IF;
@@ -1047,8 +1059,19 @@ BEGIN
     END IF;
     SELECT COUNT(*) INTO l_n FROM CIUDADES
      WHERE ID_PAIS = r.ID_PAIS AND ID_DEPARTAMENTO = r.ID_DEPARTAMENTO AND ID_CIUDAD = r.ID_CIUDAD;
-    IF l_n = 0 THEN
+    IF l_n = 0 AND r.ID_CIUDAD IS NOT NULL THEN
         falla('id_ciudad', 'La ciudad no es del departamento elegido');
+        r.ID_CIUDAD := NULL;
+    END IF;
+    -- Un departamento que no existe tampoco se guarda (la FK lo rechazaria).
+    IF r.ID_DEPARTAMENTO IS NOT NULL THEN
+        SELECT COUNT(*) INTO l_n FROM CIUDADES
+         WHERE ID_PAIS = r.ID_PAIS AND ID_DEPARTAMENTO = r.ID_DEPARTAMENTO;
+        IF l_n = 0 THEN
+            falla('id_departamento', 'El departamento no existe');
+            r.ID_DEPARTAMENTO := NULL;
+            r.ID_CIUDAD := NULL;
+        END IF;
     END IF;
     r.DIRECCION           := texto('direccion', 'direccion', 300);
     r.UBICACION_DOMICILIO := texto('ubicacion_domicilio', 'ubicacion del domicilio', 300);
@@ -1065,11 +1088,14 @@ BEGIN
 
     -- 5. Trabajo y recursos.
     r.ACTIVIDAD_LABORAL := opcion('actividad_laboral', 'si trabajas actualmente', 'SI,NO');
+    r.EMPRESA := NULL;
+    r.CARGO   := NULL;
     IF r.ACTIVIDAD_LABORAL = 'SI' THEN
         r.EMPRESA := texto('empresa', 'empresa donde trabajas', 200);
         r.CARGO   := texto('cargo', 'cargo', 200);
     END IF;
     r.MOVILIDAD_PROPIA := opcion('movilidad_propia', 'si tenes movilidad propia', 'SI,NO');
+    r.TIPO_VEHICULO := NULL;
     IF r.MOVILIDAD_PROPIA = 'SI' THEN
         r.TIPO_VEHICULO := opcion('tipo_vehiculo', 'tipo de vehiculo', 'AUTO,MOTOCICLETA');
     END IF;
@@ -1077,14 +1103,16 @@ BEGIN
     r.INTERNET_ESTABLE   := opcion('internet_estable', 'si tenes internet estable', 'SI,NO');
     r.MANEJO_OFFICE      := opcion('manejo_office', 'si manejas Office', 'SI,NO');
 
-    -- 6. Disponibilidad: los dias elegidos, en el orden de la semana.
+    -- 6. Disponibilidad: los dias elegidos (los validos), en el orden de la semana.
     FOR i IN 1 .. NVL(APEX_JSON.GET_COUNT(p_path => 'dias_disponibles'), 0) LOOP
         l_dia := UPPER(TRIM(APEX_JSON.GET_VARCHAR2(p_path => 'dias_disponibles[%d]', p0 => i)));
         IF INSTR(',' || c_dias || ',', ',' || l_dia || ',') = 0 THEN
             falla('dias_disponibles', 'Dia no valido: ' || l_dia);
+        ELSE
+            l_elegido := l_elegido || l_dia || ',';
         END IF;
-        l_elegido := l_elegido || l_dia || ',';
     END LOOP;
+    r.DIAS_DISPONIBLES := NULL;
     FOR i IN 1 .. 5 LOOP
         l_dia := REGEXP_SUBSTR(c_dias, '[^,]+', 1, i);
         IF INSTR(l_elegido, ',' || l_dia || ',') > 0 THEN
@@ -1108,9 +1136,10 @@ BEGIN
     r.AREAS_MINISTERIO     := TRIM(APEX_JSON.GET_CLOB(p_path => 'areas_ministerio'));
     IF r.AREAS_MINISTERIO IS NULL OR DBMS_LOB.GETLENGTH(r.AREAS_MINISTERIO) = 0 THEN
         falla('areas_ministerio', 'Falta completar: areas en las que servis');
-    END IF;
-    IF DBMS_LOB.GETLENGTH(r.AREAS_MINISTERIO) > c_largo_areas THEN
+        r.AREAS_MINISTERIO := NULL;
+    ELSIF DBMS_LOB.GETLENGTH(r.AREAS_MINISTERIO) > c_largo_areas THEN
         falla('areas_ministerio', 'Areas en las que servis: hasta ' || c_largo_areas || ' caracteres');
+        r.AREAS_MINISTERIO := NULL;
     END IF;
 
     -- 8. Cobro.
@@ -1125,6 +1154,7 @@ BEGIN
     r.RUC            := REPLACE(texto('ruc', 'RUC', 30), ' ', '');
     IF NOT REGEXP_LIKE(r.RUC, '^[0-9]{3,}(-[0-9])?$') THEN
         falla('ruc', 'El RUC va como 1234567-8');
+        r.RUC := NULL;
     END IF;
 
     -- 9. Documentos (enlaces de Cloudinary), segun los estudios.
@@ -1139,6 +1169,27 @@ BEGIN
     r.CERTIFICADO_NO_AGRESOR_ARCHIVO := documento('certificado_no_agresor_archivo', 'certificado de no agresor', TRUE);
     r.ANTECEDENTE_JUDICIAL_ARCHIVO   := documento('antecedente_judicial_archivo', 'antecedentes judiciales', TRUE);
     r.ANTECEDENTE_POLICIAL_ARCHIVO   := documento('antecedente_policial_archivo', 'antecedentes policiales', TRUE);
+END leer_formulario;
+
+-- Escribe las columnas del formulario de r en la postulacion del usuario y año
+-- (r.USUARIO, r.ID_ANIO, r.ID_FACILITADOR): alta o actualizacion. NO hace COMMIT.
+--   p_enviar = TRUE  (enviada completa): ESTADO pasa de INCOMPLETO a PENDIENTE y
+--                    FECHA_REGISTRO queda en la de ese primer envio. Si ya estaba
+--                    enviada (correccion), ESTADO y FECHA_REGISTRO no se tocan.
+--   p_enviar = FALSE (guardada sin terminar): queda ESTADO = INCOMPLETO. Si ya
+--                    estaba enviada NO se pisa con datos a medias: esa correccion
+--                    queda solo en POSTULANTES_FAC_BORRADORES hasta enviarla.
+-- La app nunca escribe las columnas del administrador: en el alta toman su DEFAULT.
+-- o_viejo: la fila anterior (para limpiar documentos reemplazados).
+PROCEDURE grabar(r IN OUT NOCOPY POSTULANTES_FACILITADORES%ROWTYPE, p_enviar IN BOOLEAN,
+                 o_viejo OUT POSTULANTES_FACILITADORES%ROWTYPE,
+                 o_escrita OUT BOOLEAN, o_primer_envio OUT BOOLEAN) IS
+    l_id   NUMBER;
+    l_fac  NUMBER := r.ID_FACILITADOR;
+    l_borr BOOLEAN;
+BEGIN
+    o_escrita      := FALSE;
+    o_primer_envio := FALSE;
 
     -- Una por usuario y año. Si es facilitador, su fila de FACILITADORES queda
     -- bloqueada hasta el COMMIT; para todos, el indice unico
@@ -1149,26 +1200,17 @@ BEGIN
     -- La suya del año: primero la que ya tiene su USUARIO.
     BEGIN
         SELECT ID INTO l_id FROM POSTULANTES_FACILITADORES
-         WHERE (ID_FACILITADOR = l_fac OR USUARIO = l_usuario) AND ID_ANIO = l_id_anio
-         ORDER BY CASE WHEN USUARIO = l_usuario THEN 0 ELSE 1 END, ID DESC
+         WHERE (ID_FACILITADOR = l_fac OR USUARIO = r.USUARIO) AND ID_ANIO = r.ID_ANIO
+         ORDER BY CASE WHEN USUARIO = r.USUARIO THEN 0 ELSE 1 END, ID DESC
          FETCH FIRST 1 ROWS ONLY;
     EXCEPTION
         WHEN NO_DATA_FOUND THEN l_id := NULL;
     END;
 
-    r.ID_FACILITADOR := l_fac;
-    r.USUARIO        := l_usuario;
-    r.ID_ANIO        := l_id_anio;
-    -- La app escribe SOLO las columnas del formulario, mas ESTADO = PENDIENTE en
-    -- el alta. Las demas (lo que maneja el administrador desde el sitio) no se
-    -- tocan: en el alta toman el DEFAULT de la tabla y en la correccion quedan
-    -- como estaban, ESTADO incluido. Antes se usaba VALUES r / SET ROW = r, que
-    -- mandaba NULL explicito en esas columnas (ORA-01400 en ESTADO, 24/11/2026)
-    -- y en una correccion borraba el estado.
     IF l_id IS NULL THEN
         r.ID             := NULL;
+        r.ESTADO         := CASE WHEN p_enviar THEN c_estado_inicial ELSE c_estado_borrador END;
         r.FECHA_REGISTRO := CAST(ahora AS TIMESTAMP);
-        r.ESTADO         := c_estado_inicial;
         INSERT INTO POSTULANTES_FACILITADORES (
             ESTADO,
             ID_FACILITADOR, USUARIO, ID_ANIO, FECHA_REGISTRO, ACEPTA_PROCESO,
@@ -1213,48 +1255,122 @@ BEGIN
             r.SECUNDARIO_DOC_URL, r.TECNICO_DOC_URL, r.LICENCIATURA_DOC_URL, r.POSGRADO_DOC_URL,
             r.CV_ARCHIVO, r.CERTIFICADO_NO_AGRESOR_ARCHIVO,
             r.ANTECEDENTE_JUDICIAL_ARCHIVO, r.ANTECEDENTE_POLICIAL_ARCHIVO
-        ) RETURNING ID INTO l_id;
-    ELSE
-        -- Correccion: queda la fecha del primer envio (FECHA_REGISTRO no se toca).
-        SELECT * INTO l_viejo FROM POSTULANTES_FACILITADORES WHERE ID = l_id;
-        r.ID := l_id;
-        UPDATE POSTULANTES_FACILITADORES SET
-            ESTADO = NVL(ESTADO, c_estado_inicial),
-            ID_FACILITADOR = r.ID_FACILITADOR, USUARIO = r.USUARIO, ID_ANIO = r.ID_ANIO,
-            ACEPTA_PROCESO = r.ACEPTA_PROCESO,
-            NOMBRE_COMPLETO = r.NOMBRE_COMPLETO, CEDULA = r.CEDULA,
-            FECHA_NACIMIENTO = r.FECHA_NACIMIENTO, EDAD = r.EDAD, NACIONALIDAD = r.NACIONALIDAD,
-            TELEFONO = r.TELEFONO, CORREO_ELECTRONICO = r.CORREO_ELECTRONICO,
-            ESTADO_CIVIL = r.ESTADO_CIVIL, ESTADO_CIVIL_OTRO = r.ESTADO_CIVIL_OTRO,
-            VIVE_CON = r.VIVE_CON, HIJOS = r.HIJOS, TALLE_REMERA = r.TALLE_REMERA,
-            ID_PAIS = r.ID_PAIS, ID_DEPARTAMENTO = r.ID_DEPARTAMENTO, ID_CIUDAD = r.ID_CIUDAD,
-            DIRECCION = r.DIRECCION, UBICACION_DOMICILIO = r.UBICACION_DOMICILIO,
-            SECUNDARIO_ESTADO = r.SECUNDARIO_ESTADO, SECUNDARIO_TITULO = r.SECUNDARIO_TITULO,
-            TECNICO_ESTADO = r.TECNICO_ESTADO, TECNICO_TITULO = r.TECNICO_TITULO, TECNICO_ANIO = r.TECNICO_ANIO,
-            LICENCIATURA_ESTADO = r.LICENCIATURA_ESTADO, LICENCIATURA_TITULO = r.LICENCIATURA_TITULO,
-            LICENCIATURA_ANIO = r.LICENCIATURA_ANIO,
-            POSGRADO_ESTADO = r.POSGRADO_ESTADO, POSGRADO_TITULO = r.POSGRADO_TITULO, POSGRADO_ANIO = r.POSGRADO_ANIO,
-            ACTIVIDAD_LABORAL = r.ACTIVIDAD_LABORAL, EMPRESA = r.EMPRESA, CARGO = r.CARGO,
-            MOVILIDAD_PROPIA = r.MOVILIDAD_PROPIA, TIPO_VEHICULO = r.TIPO_VEHICULO,
-            COMPUTADORA_PROPIA = r.COMPUTADORA_PROPIA, INTERNET_ESTABLE = r.INTERNET_ESTABLE,
-            MANEJO_OFFICE = r.MANEJO_OFFICE,
-            DIAS_DISPONIBLES = r.DIAS_DISPONIBLES, TURNO = r.TURNO,
-            IGLESIA_DENOMINACION = r.IGLESIA_DENOMINACION, IGLESIA_NOMBRE = r.IGLESIA_NOMBRE,
-            PASTOR_NOMBRE = r.PASTOR_NOMBRE, PASTOR_TELEFONO = r.PASTOR_TELEFONO,
-            LIDER_NOMBRE = r.LIDER_NOMBRE, LIDER_TELEFONO = r.LIDER_TELEFONO,
-            BAUTIZADO_AGUA = r.BAUTIZADO_AGUA, AREAS_MINISTERIO = r.AREAS_MINISTERIO,
-            BANCO_NOMBRE = r.BANCO_NOMBRE, BANCO_SUCURSAL = r.BANCO_SUCURSAL,
-            TITULAR_NOMBRE = r.TITULAR_NOMBRE, TITULAR_CI = r.TITULAR_CI,
-            TIPO_CUENTA = r.TIPO_CUENTA, NUMERO_CUENTA = r.NUMERO_CUENTA,
-            FACTURA_TIPO = r.FACTURA_TIPO, FACTURA_EMISOR = r.FACTURA_EMISOR, RUC = r.RUC,
-            FOTO_URL = r.FOTO_URL, CEDULA_FRENTE_URL = r.CEDULA_FRENTE_URL, CEDULA_DORSO_URL = r.CEDULA_DORSO_URL,
-            SECUNDARIO_DOC_URL = r.SECUNDARIO_DOC_URL, TECNICO_DOC_URL = r.TECNICO_DOC_URL,
-            LICENCIATURA_DOC_URL = r.LICENCIATURA_DOC_URL, POSGRADO_DOC_URL = r.POSGRADO_DOC_URL,
-            CV_ARCHIVO = r.CV_ARCHIVO, CERTIFICADO_NO_AGRESOR_ARCHIVO = r.CERTIFICADO_NO_AGRESOR_ARCHIVO,
-            ANTECEDENTE_JUDICIAL_ARCHIVO = r.ANTECEDENTE_JUDICIAL_ARCHIVO,
-            ANTECEDENTE_POLICIAL_ARCHIVO = r.ANTECEDENTE_POLICIAL_ARCHIVO
-         WHERE ID = l_id;
+        ) RETURNING ID INTO r.ID;
+        o_escrita      := TRUE;
+        o_primer_envio := p_enviar;
+        RETURN;
     END IF;
+
+    SELECT * INTO o_viejo FROM POSTULANTES_FACILITADORES WHERE ID = l_id;
+    -- Sin enviar todavia = INCOMPLETO. Una sin ESTADO cuenta como enviada (no se pisa a medias).
+    l_borr := NVL(o_viejo.ESTADO, '-') = c_estado_borrador;
+    IF NOT p_enviar AND NOT l_borr THEN
+        RETURN;
+    END IF;
+    o_primer_envio   := p_enviar AND l_borr;
+    r.ID             := l_id;
+    r.ESTADO         := CASE
+                            WHEN NOT p_enviar THEN c_estado_borrador
+                            WHEN l_borr OR o_viejo.ESTADO IS NULL THEN c_estado_inicial
+                            ELSE o_viejo.ESTADO
+                        END;
+    r.FECHA_REGISTRO := CASE WHEN o_primer_envio THEN CAST(ahora AS TIMESTAMP) ELSE o_viejo.FECHA_REGISTRO END;
+    UPDATE POSTULANTES_FACILITADORES SET
+        ESTADO = r.ESTADO, FECHA_REGISTRO = r.FECHA_REGISTRO,
+        ID_FACILITADOR = r.ID_FACILITADOR, USUARIO = r.USUARIO, ID_ANIO = r.ID_ANIO,
+        ACEPTA_PROCESO = r.ACEPTA_PROCESO,
+        NOMBRE_COMPLETO = r.NOMBRE_COMPLETO, CEDULA = r.CEDULA,
+        FECHA_NACIMIENTO = r.FECHA_NACIMIENTO, EDAD = r.EDAD, NACIONALIDAD = r.NACIONALIDAD,
+        TELEFONO = r.TELEFONO, CORREO_ELECTRONICO = r.CORREO_ELECTRONICO,
+        ESTADO_CIVIL = r.ESTADO_CIVIL, ESTADO_CIVIL_OTRO = r.ESTADO_CIVIL_OTRO,
+        VIVE_CON = r.VIVE_CON, HIJOS = r.HIJOS, TALLE_REMERA = r.TALLE_REMERA,
+        ID_PAIS = r.ID_PAIS, ID_DEPARTAMENTO = r.ID_DEPARTAMENTO, ID_CIUDAD = r.ID_CIUDAD,
+        DIRECCION = r.DIRECCION, UBICACION_DOMICILIO = r.UBICACION_DOMICILIO,
+        SECUNDARIO_ESTADO = r.SECUNDARIO_ESTADO, SECUNDARIO_TITULO = r.SECUNDARIO_TITULO,
+        TECNICO_ESTADO = r.TECNICO_ESTADO, TECNICO_TITULO = r.TECNICO_TITULO, TECNICO_ANIO = r.TECNICO_ANIO,
+        LICENCIATURA_ESTADO = r.LICENCIATURA_ESTADO, LICENCIATURA_TITULO = r.LICENCIATURA_TITULO,
+        LICENCIATURA_ANIO = r.LICENCIATURA_ANIO,
+        POSGRADO_ESTADO = r.POSGRADO_ESTADO, POSGRADO_TITULO = r.POSGRADO_TITULO, POSGRADO_ANIO = r.POSGRADO_ANIO,
+        ACTIVIDAD_LABORAL = r.ACTIVIDAD_LABORAL, EMPRESA = r.EMPRESA, CARGO = r.CARGO,
+        MOVILIDAD_PROPIA = r.MOVILIDAD_PROPIA, TIPO_VEHICULO = r.TIPO_VEHICULO,
+        COMPUTADORA_PROPIA = r.COMPUTADORA_PROPIA, INTERNET_ESTABLE = r.INTERNET_ESTABLE,
+        MANEJO_OFFICE = r.MANEJO_OFFICE,
+        DIAS_DISPONIBLES = r.DIAS_DISPONIBLES, TURNO = r.TURNO,
+        IGLESIA_DENOMINACION = r.IGLESIA_DENOMINACION, IGLESIA_NOMBRE = r.IGLESIA_NOMBRE,
+        PASTOR_NOMBRE = r.PASTOR_NOMBRE, PASTOR_TELEFONO = r.PASTOR_TELEFONO,
+        LIDER_NOMBRE = r.LIDER_NOMBRE, LIDER_TELEFONO = r.LIDER_TELEFONO,
+        BAUTIZADO_AGUA = r.BAUTIZADO_AGUA, AREAS_MINISTERIO = r.AREAS_MINISTERIO,
+        BANCO_NOMBRE = r.BANCO_NOMBRE, BANCO_SUCURSAL = r.BANCO_SUCURSAL,
+        TITULAR_NOMBRE = r.TITULAR_NOMBRE, TITULAR_CI = r.TITULAR_CI,
+        TIPO_CUENTA = r.TIPO_CUENTA, NUMERO_CUENTA = r.NUMERO_CUENTA,
+        FACTURA_TIPO = r.FACTURA_TIPO, FACTURA_EMISOR = r.FACTURA_EMISOR, RUC = r.RUC,
+        FOTO_URL = r.FOTO_URL, CEDULA_FRENTE_URL = r.CEDULA_FRENTE_URL, CEDULA_DORSO_URL = r.CEDULA_DORSO_URL,
+        SECUNDARIO_DOC_URL = r.SECUNDARIO_DOC_URL, TECNICO_DOC_URL = r.TECNICO_DOC_URL,
+        LICENCIATURA_DOC_URL = r.LICENCIATURA_DOC_URL, POSGRADO_DOC_URL = r.POSGRADO_DOC_URL,
+        CV_ARCHIVO = r.CV_ARCHIVO, CERTIFICADO_NO_AGRESOR_ARCHIVO = r.CERTIFICADO_NO_AGRESOR_ARCHIVO,
+        ANTECEDENTE_JUDICIAL_ARCHIVO = r.ANTECEDENTE_JUDICIAL_ARCHIVO,
+        ANTECEDENTE_POLICIAL_ARCHIVO = r.ANTECEDENTE_POLICIAL_ARCHIVO
+     WHERE ID = l_id;
+    o_escrita := TRUE;
+END grabar;
+
+-- Despues del COMMIT: borra de Cloudinary los documentos de una fila vieja que
+-- ya no use ninguna postulacion. Nunca lanza.
+PROCEDURE limpiar_fila(p IN POSTULANTES_FACILITADORES%ROWTYPE) IS
+BEGIN
+    limpiar(p.FOTO_URL);
+    limpiar(p.CEDULA_FRENTE_URL);
+    limpiar(p.CEDULA_DORSO_URL);
+    limpiar(p.SECUNDARIO_DOC_URL);
+    limpiar(p.TECNICO_DOC_URL);
+    limpiar(p.LICENCIATURA_DOC_URL);
+    limpiar(p.POSGRADO_DOC_URL);
+    limpiar(p.CV_ARCHIVO);
+    limpiar(p.CERTIFICADO_NO_AGRESOR_ARCHIVO);
+    limpiar(p.ANTECEDENTE_JUDICIAL_ARCHIVO);
+    limpiar(p.ANTECEDENTE_POLICIAL_ARCHIVO);
+END limpiar_fila;
+
+/* -------------------------------------------------------------------------- */
+/* POST mi-postulacion                                                        */
+/* -------------------------------------------------------------------------- */
+
+PROCEDURE guardar(p_token IN VARCHAR2, p_body IN CLOB) IS
+    l_fac     NUMBER;
+    l_id_anio NUMBER;
+    l_anio    VARCHAR2(40);
+    r         POSTULANTES_FACILITADORES%ROWTYPE;
+    l_viejo   POSTULANTES_FACILITADORES%ROWTYPE;
+    l_usuario VARCHAR2(255);
+    l_escrita BOOLEAN;
+    l_primera BOOLEAN;
+BEGIN
+    -- Enviar valida TODO: nunca en modo suave (la variable vive en la sesion de
+    -- ORDS, que se reutiliza entre pedidos).
+    g_suave := FALSE;
+    IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
+
+    anio_abierto(l_id_anio, l_anio);
+    IF l_id_anio IS NULL THEN
+        p_error(409, 'Conflict', 'No hay un año lectivo abierto para postularse'); RETURN;
+    END IF;
+    IF NOT periodo_abierto(l_id_anio) THEN
+        p_error(409, 'Conflict', 'El periodo de postulacion esta cerrado: ya no se pueden cargar ni modificar postulaciones'); RETURN;
+    END IF;
+
+    BEGIN
+        APEX_JSON.PARSE(p_source => p_body);
+    EXCEPTION
+        WHEN OTHERS THEN
+            p_error(400, 'Bad Request', 'Los datos enviados no son validos'); RETURN;
+    END;
+
+    leer_formulario(r);
+
+    r.ID_FACILITADOR := l_fac;
+    r.USUARIO        := l_usuario;
+    r.ID_ANIO        := l_id_anio;
+    grabar(r, TRUE, l_viejo, l_escrita, l_primera);
     COMMIT;
 
     -- Enviada completa: lo guardado sin terminar ya no hace falta.
@@ -1262,24 +1378,14 @@ BEGIN
     COMMIT;
 
     -- Despues del COMMIT: los documentos reemplazados se borran de Cloudinary.
-    limpiar(l_viejo.FOTO_URL);
-    limpiar(l_viejo.CEDULA_FRENTE_URL);
-    limpiar(l_viejo.CEDULA_DORSO_URL);
-    limpiar(l_viejo.SECUNDARIO_DOC_URL);
-    limpiar(l_viejo.TECNICO_DOC_URL);
-    limpiar(l_viejo.LICENCIATURA_DOC_URL);
-    limpiar(l_viejo.POSGRADO_DOC_URL);
-    limpiar(l_viejo.CV_ARCHIVO);
-    limpiar(l_viejo.CERTIFICADO_NO_AGRESOR_ARCHIVO);
-    limpiar(l_viejo.ANTECEDENTE_JUDICIAL_ARCHIVO);
-    limpiar(l_viejo.ANTECEDENTE_POLICIAL_ARCHIVO);
+    limpiar_fila(l_viejo);
 
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
-    APEX_JSON.WRITE('id', l_id);
-    APEX_JSON.WRITE('nueva', r.ID IS NULL);
-    APEX_JSON.WRITE('message', CASE WHEN r.ID IS NULL THEN 'Postulacion enviada' ELSE 'Postulacion actualizada' END);
+    APEX_JSON.WRITE('id', r.ID);
+    APEX_JSON.WRITE('nueva', l_primera);
+    APEX_JSON.WRITE('message', CASE WHEN l_primera THEN 'Postulacion enviada' ELSE 'Postulacion actualizada' END);
     APEX_JSON.CLOSE_OBJECT;
 EXCEPTION
     WHEN e_dato THEN
@@ -1527,18 +1633,30 @@ END eliminar;
 /* -------------------------------------------------------------------------- */
 
 -- Guarda lo cargado SIN validar (Jose, 24/11/2026: ningun campo es
--- obligatorio para guardar). Cuerpo { paso, datos }: datos es el JSON del
--- formulario como texto. Solo se controla que sea JSON y el tamaño.
+-- obligatorio para guardar). Cuerpo { paso, datos, postulacion }:
+--   datos       el JSON del formulario tal cual, como texto: la app lo usa
+--               para retomar donde quedo (POSTULANTES_FAC_BORRADORES).
+--   postulacion el mismo formulario como lo manda el envio, como texto. Lo
+--               valido va tambien a POSTULANTES_FACILITADORES con ESTADO =
+--               INCOMPLETO, para que los administradores ya lo vean (Jose,
+--               24/11/2026); lo que falta o no es valido queda NULL. Una app
+--               vieja no lo manda: entonces solo se guarda el borrador.
 PROCEDURE guardar_borrador(p_token IN VARCHAR2, p_body IN CLOB) IS
     l_fac     NUMBER;
     l_usuario VARCHAR2(255);
     l_id_anio NUMBER;
     l_anio    VARCHAR2(40);
     l_datos   CLOB;
+    l_post    CLOB;
     l_paso    NUMBER;
     l_fecha   DATE;
     l_vals    APEX_JSON.T_VALUES;
+    r         POSTULANTES_FACILITADORES%ROWTYPE;
+    l_viejo   POSTULANTES_FACILITADORES%ROWTYPE;
+    l_escrita BOOLEAN := FALSE;
+    l_primera BOOLEAN;
 BEGIN
+    g_suave := FALSE;
     IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
     anio_abierto(l_id_anio, l_anio);
     IF l_id_anio IS NULL THEN
@@ -1550,6 +1668,7 @@ BEGIN
     BEGIN
         APEX_JSON.PARSE(p_source => p_body);
         l_datos := APEX_JSON.GET_CLOB(p_path => 'datos');
+        l_post  := APEX_JSON.GET_CLOB(p_path => 'postulacion');
         l_paso  := f_numero(APEX_JSON.GET_VARCHAR2(p_path => 'paso'));
         APEX_JSON.PARSE(p_values => l_vals, p_source => l_datos);
     EXCEPTION
@@ -1569,17 +1688,50 @@ BEGIN
                                   b.ID_FACILITADOR = l_fac, b.FECHA = l_fecha
      WHEN NOT MATCHED THEN INSERT (USUARIO, ID_ANIO, ID_FACILITADOR, DATOS, PASO, FECHA)
                            VALUES (l_usuario, l_id_anio, l_fac, l_datos, l_paso, l_fecha);
+
+    -- Lo valido, tambien en POSTULANTES_FACILITADORES (INCOMPLETO). Sin acuerdo
+    -- con el proceso no se registra nada ahi. Una ya enviada no se pisa (grabar).
+    IF l_post IS NOT NULL AND DBMS_LOB.GETLENGTH(l_post) <= c_largo_borrador THEN
+        BEGIN
+            APEX_JSON.PARSE(p_source => l_post);
+        EXCEPTION
+            WHEN OTHERS THEN l_post := NULL;
+        END;
+        IF l_post IS NOT NULL
+           AND UPPER(TRIM(APEX_JSON.GET_VARCHAR2(p_path => 'acepta_proceso'))) = 'DE_ACUERDO' THEN
+            g_suave := TRUE;
+            leer_formulario(r);
+            g_suave := FALSE;
+            r.ID_FACILITADOR := l_fac;
+            r.USUARIO        := l_usuario;
+            r.ID_ANIO        := l_id_anio;
+            grabar(r, FALSE, l_viejo, l_escrita, l_primera);
+        END IF;
+    END IF;
     COMMIT;
+
+    -- Documentos que la fila ya no usa (reemplazados o quitados).
+    IF l_escrita THEN limpiar_fila(l_viejo); END IF;
 
     abrir_json;
     APEX_JSON.OPEN_OBJECT;
     APEX_JSON.WRITE('success', TRUE);
+    -- visible: si los administradores ya la ven (fila INCOMPLETO actualizada).
+    APEX_JSON.WRITE('visible', l_escrita);
     APEX_JSON.WRITE('message', 'Guardada sin terminar');
     APEX_JSON.CLOSE_OBJECT;
 EXCEPTION
     WHEN OTHERS THEN
+        g_suave := FALSE;
         ROLLBACK;
-        p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+        IF SQLCODE = -1400 THEN
+            -- Una columna obligatoria de la tabla que todavia no se cargo.
+            p_error(400, 'Bad Request', 'Para guardar falta un dato obligatorio: ' || SQLERRM);
+        ELSIF SQLCODE = -2290 THEN
+            p_error(400, 'Bad Request', 'Hay una opcion no valida: ' || SQLERRM);
+        ELSE
+            p_error(500, 'Internal Server Error', 'Error: ' || SQLERRM);
+        END IF;
 END guardar_borrador;
 
 PROCEDURE descartar_borrador(p_token IN VARCHAR2) IS
@@ -1588,6 +1740,8 @@ PROCEDURE descartar_borrador(p_token IN VARCHAR2) IS
     l_id_anio  NUMBER;
     l_anio     VARCHAR2(40);
     l_borrador CLOB;
+    TYPE t_filas IS TABLE OF POSTULANTES_FACILITADORES%ROWTYPE;
+    l_incomp   t_filas;
 BEGIN
     IF NOT contexto(p_token, l_usuario, l_fac) THEN RETURN; END IF;
     anio_abierto(l_id_anio, l_anio);
@@ -1595,9 +1749,20 @@ BEGIN
                WHERE USUARIO = l_usuario AND ID_ANIO = l_id_anio) LOOP
         l_borrador := b.DATOS;
     END LOOP;
+    -- La copia INCOMPLETO de POSTULANTES_FACILITADORES tambien se descarta (una
+    -- ya enviada no: esa se borra con "Eliminar mi postulacion").
+    SELECT * BULK COLLECT INTO l_incomp FROM POSTULANTES_FACILITADORES
+     WHERE (ID_FACILITADOR = l_fac OR USUARIO = l_usuario) AND ID_ANIO = l_id_anio
+       AND ESTADO = c_estado_borrador;
+    FOR i IN 1 .. l_incomp.COUNT LOOP
+        DELETE FROM POSTULANTES_FACILITADORES WHERE ID = l_incomp(i).ID;
+    END LOOP;
     DELETE FROM POSTULANTES_FAC_BORRADORES WHERE USUARIO = l_usuario AND ID_ANIO = l_id_anio;
     COMMIT;
     limpiar_borrador(l_borrador);
+    FOR i IN 1 .. l_incomp.COUNT LOOP
+        limpiar_fila(l_incomp(i));
+    END LOOP;
 
     abrir_json;
     APEX_JSON.OPEN_OBJECT;

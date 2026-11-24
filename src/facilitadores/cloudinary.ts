@@ -4,8 +4,9 @@
 // la app manda el archivo con esos campos y se queda con el secure_url.
 
 import { Platform } from 'react-native';
+import { File } from 'expo-file-system';
 
-import { authFetch, ErrorApi, pedirExterno } from './auth/api';
+import { authFetch, ErrorApi, esSinConexion, pedirExterno } from './auth/api';
 
 /** Un archivo del dispositivo listo para subir. `file`: el File del navegador, si lo hay. */
 export type ArchivoLocal = { uri: string; nombre: string; tipo: string; file?: Blob };
@@ -33,13 +34,25 @@ export async function subirACloudinary(rutaFirma: string, archivo: ArchivoLocal,
     const blob = archivo.file ?? (await (await fetch(archivo.uri)).blob());
     form.append('file', blob, archivo.nombre);
   } else {
-    // React Native sube el archivo local a partir de { uri, name, type }.
-    form.append('file', { uri: archivo.uri, name: archivo.nombre, type: archivo.tipo } as unknown as Blob);
+    // APK: el archivo local como File de expo-file-system. NO { uri, name, type }: desde Expo SDK 58
+    // el fetch global en el celular es expo/fetch, que no acepta esa forma de React Native ("uri is
+    // not supported") y lanza "Unsupported FormDataPart implementation"; la app lo mostraba como
+    // "Sin conexión con el servidor" (24/11/2026). expo/fetch lee el File con bytes(), y toma su
+    // nombre y su tipo (por la extensión: .jpg → image/jpeg, .pdf → application/pdf).
+    form.append('file', new File(archivo.uri) as unknown as Blob);
   }
   for (const [k, v] of Object.entries(firma.campos)) form.append(k, String(v));
 
   // Sin Content-Type: lo pone fetch con el boundary del multipart.
-  const res = await pedirExterno(firma.upload_url, { method: 'POST', body: form });
+  let res: Response;
+  try {
+    res = await pedirExterno(firma.upload_url, { method: 'POST', body: form });
+  } catch (e) {
+    // pedir() junta todo error de fetch como "sin conexión"; acá se muestra también la causa,
+    // porque un archivo que no se puede leer o armar no es un problema de red.
+    const causa = esSinConexion(e) && e.causa instanceof Error ? e.causa.message : '';
+    throw new Error(`No se pudo subir el archivo. Revisá tu conexión y probá de nuevo.${causa ? ` (Detalle: ${causa})` : ''}`);
+  }
   const r = (await res.json().catch(() => ({}))) as { secure_url?: string; error?: { message?: string } };
   if (!res.ok || !r.secure_url) throw new Error(r.error?.message ? `No se pudo subir el archivo: ${r.error.message}` : 'No se pudo subir el archivo. Probá de nuevo.');
   return r.secure_url;

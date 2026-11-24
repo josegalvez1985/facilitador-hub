@@ -883,12 +883,15 @@ function guardadaDe(v: unknown): Guardada | null {
 /**
  * Guarda lo cargado SIN TERMINAR, en el servidor y sin validar (ningún campo es obligatorio para
  * guardar). La postulación queda terminada recién al enviarla completa (enviarPostulacion).
+ * - `datos`: el formulario tal cual, para retomarlo en el mismo punto.
+ * - `postulacion`: lo mismo que mandaría el envío; el servidor guarda lo válido en
+ *   POSTULANTES_FACILITADORES con ESTADO INCOMPLETO, así los administradores ya ven lo cargado.
  */
 export async function guardarSinTerminar(d: Datos, paso: number): Promise<void> {
   await authFetch('mi-postulacion/borrador', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ paso, datos: JSON.stringify(d) }),
+    body: JSON.stringify({ paso, datos: JSON.stringify(d), postulacion: JSON.stringify(payload(d)) }),
   });
 }
 
