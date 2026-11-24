@@ -418,6 +418,7 @@ https://github.com/josegalvez1985/facilitador-hub/releases/download/apk-latest/f
 - Está firmado con la clave de depuración de la plantilla de Expo, igual en cada corrida. El workflow verifica la firma antes de publicar: si cambiara, el celular obligaría a desinstalar.
 - En GitHub, **Settings → General → Releases → Immutable releases** tiene que estar apagada; si no, no se puede reemplazar el APK.
 - Si el repositorio es privado, la descarga pide iniciar sesión en GitHub.
+- El **login de la web** tiene el botón **Descargar la app para Android** (`src/facilitadores/descarga-apk.ts`), que abre esa URL. No aparece en iPhone/iPad ni dentro de la app instalada. Cada toque le agrega `?v=<hora>`, porque GitHub deja en caché un 404 de la URL fija si alguien la pidió mientras el workflow reemplazaba el archivo.
 - El JS va dentro del APK: la app **abre sin conexión**, pero los datos vienen del servidor.
 
 ### Android: Google Play (AAB)

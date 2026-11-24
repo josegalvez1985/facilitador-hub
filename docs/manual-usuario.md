@@ -200,8 +200,8 @@ Acá te postulás para el año lectivo: para seguir como facilitador, o para emp
 
 ### Android
 
-1. Descargá el archivo **facilitadores.apk** del enlace que te compartan.
-2. Abrilo. Si el celular lo pide, permití **instalar apps de origen desconocido**.
+1. Entrá a **facilitadoresfc.online** desde el celular y, debajo de **Ingresar**, tocá **Descargar la app para Android**. También sirve el enlace a **facilitadores.apk** que te compartan.
+2. Abrí el archivo descargado. Si el celular lo pide, permití **instalar apps de origen desconocido**.
 3. Tocá **Instalar**. Las versiones nuevas se instalan encima, sin perder nada.
 
 ### iPhone

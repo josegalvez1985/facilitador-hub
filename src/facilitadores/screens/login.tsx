@@ -4,8 +4,9 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowRight, Check, Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react-native';
+import { ArrowRight, Check, Download, Eye, EyeOff, LockKeyhole, UserRound } from 'lucide-react-native';
 
+import { descargarApk, ofrecerApk } from '../descarga-apk';
 import { getPasswordRecordada, getUsuarioRecordado, setPasswordRecordada, setUsuarioRecordado } from '../auth/recordar';
 import { useSession } from '../auth/session';
 import { useLayout } from '../shell';
@@ -30,6 +31,7 @@ export function LoginScreen() {
   const [visible, setVisible] = useState(false);
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(false);
+  const [apk] = useState(ofrecerApk);
 
   // replace: que el login no quede en el historial (si no, "atrás" rebota).
   useEffect(() => {
@@ -127,6 +129,14 @@ export function LoginScreen() {
             ) : null}
             <Button label={cargando ? 'Iniciando...' : 'Ingresar'} iconRight={cargando ? undefined : ArrowRight} size="lg" onPress={() => void onSubmit()} disabled={cargando} />
           </View>
+          {apk && (
+            <View style={s.apk}>
+              <Button variant="outline" icon={Download} label="Descargar la app para Android" onPress={descargarApk} />
+              <Text size={12} color={colors.mutedForeground} style={{ textAlign: 'center', marginTop: 8 }}>
+                Abrí el archivo en tu celular para instalarla.
+              </Text>
+            </View>
+          )}
           <Text size={10} color={colors.mutedForeground} style={{ textAlign: 'center', marginTop: 40 }}>
             © {new Date().getFullYear()} Facilitadores · Tu vocación nos conecta.
           </Text>
@@ -221,6 +231,7 @@ const useStyles = makeStyles((colors) =>
     manija: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: 22 },
     // 16 px: Safari de iOS (PWA) no hace zoom al enfocar el campo.
     input16: { fontSize: 16 },
+    apk: { marginTop: 22, paddingTop: 22, borderTopWidth: 1, borderTopColor: colors.border },
     remember: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -4, marginBottom: 18, alignSelf: 'flex-start' },
     checkbox: { width: 20, height: 20, borderRadius: radius.sm, borderWidth: 1.5, borderColor: colors.mutedForeground, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' },
     checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
