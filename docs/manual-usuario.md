@@ -206,9 +206,11 @@ Acá te postulás para el año lectivo: para seguir como facilitador, o para emp
 
 ### iPhone
 
-1. Abrí la app en **Safari**.
+1. Abrí **facilitadoresfc.online** en **Safari**.
 2. Tocá **Compartir** y después **Agregar a pantalla de inicio**.
 3. Abrila desde el ícono nuevo, como cualquier otra app.
+
+En el iPhone la app necesita internet siempre. También podés entrar a **facilitadoresfc.online** desde cualquier computadora.
 
 ## Preguntas frecuentes
 

@@ -1,12 +1,36 @@
-# Genera el APK de Facilitadores en cada push a main o react-native.
+# Genera el APK y el AAB (Google Play) de Facilitadores en cada push a main o react-native.
 #
 # Los pasos son:
 #   1. npm ci + typecheck.
 #   2. expo prebuild: android/ no está en el repo (.gitignore), se genera en cada corrida.
 #   3. gradlew assembleRelease: el JS va empaquetado dentro del APK. Un assembleDebug
 #      de React Native NO sirve para instalar: busca el servidor de Metro al abrir.
+#   4. gradlew bundleRelease -PfirmaPlay: el AAB para subir a Google Play, firmado con
+#      la clave de subida (upload key) de los Secrets. Solo si esos Secrets existen.
 #
-# El APK se publica en el release `apk-latest` con el nombre `facilitadores.apk`.
+# Las dos salidas llevan el JS adentro: la app abre sin conexión (los datos sí
+# vienen del servidor).
+#
+# Dos firmas distintas, a propósito:
+#   - El APK (instalación directa, pruebas) sigue con la clave de depuración de
+#     Expo, así nadie tiene que desinstalar la versión que ya tiene.
+#   - El AAB va con la clave de subida. Google Play rechaza la de depuración, y
+#     con "Play App Signing" Google vuelve a firmar con su propia clave lo que
+#     instala en los celulares. Por eso la app de Play y el APK no se pueden
+#     instalar uno encima del otro: pasar a la de Play pide desinstalar el APK una vez.
+#
+# Secrets (Settings > Secrets and variables > Actions > Secrets):
+#   UPLOAD_KEYSTORE_BASE64  el .jks de la clave de subida en base64
+#   UPLOAD_STORE_PASSWORD   contraseña del .jks
+#   UPLOAD_KEY_ALIAS        alias de la clave (p. ej. "upload")
+#   UPLOAD_KEY_PASSWORD     contraseña de la clave (con PKCS12 es la misma del .jks)
+# Variable opcional (misma pantalla > Variables):
+#   FIRMA_PLAY_ESPERADA     SHA-256 del certificado de subida, para que el workflow
+#                           corte si el AAB sale firmado con otra clave.
+#
+# El APK y el AAB se publican en el release `apk-latest` (`facilitadores.apk`,
+# `facilitadores.aab`). El AAB se sube a Play Console a mano (la primera vez es
+# obligatorio hacerlo a mano).
 # Siempre el mismo tag y el mismo nombre a propósito: la URL de descarga queda
 # fija, el asset del commit anterior se reemplaza y el tag se mueve al commit
 # actual, así que nunca queda más de un APK publicado.
@@ -47,6 +71,11 @@ jobs:
       # Para publicar el release: por defecto el token es de solo lectura.
       contents: write
 
+    env:
+      # "true" cuando está cargada la clave de subida de Google Play. Sin ella se
+      # genera solo el APK, como antes.
+      HAY_FIRMA_PLAY: ${{ secrets.UPLOAD_KEYSTORE_BASE64 != '' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -73,7 +102,9 @@ jobs:
         run: npx tsc --noEmit
 
       # versionCode único y creciente por corrida: Android rechaza instalar un
-      # APK con versionCode igual o menor al instalado. Solo cambia la copia de
+      # APK con versionCode igual o menor al instalado, y Google Play rechaza un
+      # AAB con un versionCode ya subido. Si este workflow se borra y se crea de
+      # nuevo, el número de corrida vuelve a 1: habría que sumarle un desplazamiento. Solo cambia la copia de
       # app.json de esta corrida, no el repo. La versión visible ("version")
       # se sigue editando a mano en app.json.
       - name: Fijar versionCode
@@ -150,12 +181,95 @@ jobs:
           fi
           echo "Firma correcta: $FIRMA"
 
-      # Respaldo de corta vida por si falla la publicación. El APK que vale es
-      # el del release; este se descarga como ZIP y pide login.
+      # La clave de subida de Google Play: el .jks va a un archivo temporal del
+      # runner (fuera del repo) y las contraseñas quedan solo en variables de entorno.
+      - name: Preparar la firma de Google Play
+        if: env.HAY_FIRMA_PLAY == 'true'
+        env:
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.UPLOAD_KEYSTORE_BASE64 }}
+          UPLOAD_STORE_PASSWORD: ${{ secrets.UPLOAD_STORE_PASSWORD }}
+        run: |
+          # Sin \r, saltos ni espacios: el base64 generado en Windows los trae.
+          printf '%s' "$UPLOAD_KEYSTORE_BASE64" | tr -d '\r\n ' | base64 -d > "$RUNNER_TEMP/upload.jks"
+          keytool -list -keystore "$RUNNER_TEMP/upload.jks" -storepass "$UPLOAD_STORE_PASSWORD" | grep -iE "entry|SHA-256|fingerprint" || true
+          # Se agrega al final del build.gradle que generó prebuild. Gradle lee los
+          # bloques android { } en orden, así que este pisa la firma de release
+          # (que la plantilla deja con la clave de depuración), pero SOLO cuando
+          # se compila con -PfirmaPlay: el APK de arriba no cambia.
+          cat >> android/app/build.gradle <<'EOF'
+
+          // Agregado por .github/workflows/apk.yml: firma del AAB de Google Play.
+          if (project.hasProperty("firmaPlay")) {
+              android {
+                  signingConfigs {
+                      play {
+                          storeFile file(System.getenv("UPLOAD_STORE_FILE"))
+                          storePassword System.getenv("UPLOAD_STORE_PASSWORD")
+                          keyAlias System.getenv("UPLOAD_KEY_ALIAS")
+                          keyPassword System.getenv("UPLOAD_KEY_PASSWORD")
+                      }
+                  }
+                  buildTypes {
+                      release {
+                          signingConfig signingConfigs.play
+                      }
+                  }
+              }
+          }
+          EOF
+          tail -22 android/app/build.gradle
+
+      # Reutiliza lo que ya compiló el APK (JS, código nativo): solo empaqueta y firma.
+      - name: Compilar AAB para Google Play
+        if: env.HAY_FIRMA_PLAY == 'true'
+        env:
+          NODE_ENV: production
+          UPLOAD_STORE_FILE: ${{ runner.temp }}/upload.jks
+          UPLOAD_STORE_PASSWORD: ${{ secrets.UPLOAD_STORE_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
+        run: ./gradlew bundleRelease -PfirmaPlay --stacktrace --build-cache
+        working-directory: android
+
+      # El AAB se firma con el esquema v1 (jar), que keytool sí lee. Corta si
+      # quedó con la clave de depuración (Play lo rechazaría) o, si está cargada
+      # la variable FIRMA_PLAY_ESPERADA, con otra clave que no sea la de subida.
+      - name: Verificar la firma del AAB
+        if: env.HAY_FIRMA_PLAY == 'true'
+        env:
+          FIRMA_DEPURACION: fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c
+          FIRMA_PLAY_ESPERADA: ${{ vars.FIRMA_PLAY_ESPERADA }}
+        run: |
+          cp android/app/build/outputs/bundle/release/app-release.aab facilitadores.aab
+          rm -f "$RUNNER_TEMP/upload.jks"
+
+          FIRMA=$(keytool -printcert -jarfile facilitadores.aab | grep -E "^\s*SHA256:" | head -1 | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
+          echo "Certificado del AAB (SHA-256): $FIRMA"
+          if [ -z "$FIRMA" ]; then
+            echo "::error::No se pudo leer la firma del AAB."
+            exit 1
+          fi
+          if [ "$FIRMA" = "$FIRMA_DEPURACION" ]; then
+            echo "::error::El AAB quedó firmado con la clave de depuración: Google Play lo rechaza. Revisá el bloque firmaPlay del build.gradle."
+            exit 1
+          fi
+          ESPERADA=$(echo "$FIRMA_PLAY_ESPERADA" | tr -d ': ' | tr 'A-F' 'a-f')
+          if [ -n "$ESPERADA" ] && [ "$FIRMA" != "$ESPERADA" ]; then
+            echo "::error::El AAB quedó firmado con $FIRMA y se esperaba $ESPERADA (variable FIRMA_PLAY_ESPERADA). Google Play rechaza una clave de subida distinta a la registrada."
+            exit 1
+          fi
+          if [ -z "$ESPERADA" ]; then
+            echo "::warning::Falta la variable FIRMA_PLAY_ESPERADA: cargala con $FIRMA para que el workflow verifique la clave de subida."
+          fi
+
+      # Respaldo de corta vida por si falla la publicación. Lo que vale es lo del
+      # release; esto se descarga como ZIP y pide login.
       - uses: actions/upload-artifact@v4
         with:
           name: facilitadores-${{ github.run_number }}
-          path: facilitadores.apk
+          path: |
+            facilitadores.apk
+            facilitadores.aab
           if-no-files-found: error
           retention-days: 7
 
@@ -177,12 +291,20 @@ jobs:
           Corrida: #${GITHUB_RUN_NUMBER}
           versionCode: ${GITHUB_RUN_NUMBER}"
 
+          ARCHIVOS="facilitadores.apk"
+          if [ -f facilitadores.aab ]; then
+            ARCHIVOS="$ARCHIVOS facilitadores.aab"
+            NOTAS="$NOTAS
+
+          facilitadores.aab: para subir a Google Play Console."
+          fi
+
           git tag -f apk-latest "$GITHUB_SHA"
           git push -f origin refs/tags/apk-latest
 
           if gh release view apk-latest >/dev/null 2>&1; then
-            gh release upload apk-latest facilitadores.apk --clobber
+            gh release upload apk-latest $ARCHIVOS --clobber
             gh release edit apk-latest --title "Último APK" --notes "$NOTAS" --latest
           else
-            gh release create apk-latest facilitadores.apk --title "Último APK" --notes "$NOTAS" --latest
+            gh release create apk-latest $ARCHIVOS --title "Último APK" --notes "$NOTAS" --latest
           fi

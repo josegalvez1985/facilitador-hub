@@ -34,6 +34,9 @@
 - [x] Mi postulación → Documentos: foto carnet, cédula y títulos o constancias (foto o PDF) a Cloudinary con el preset `fcfacilitadores`, obligatorios.
 
 ## Pendiente
+- [ ] Web en **facilitadoresfc.online** (workflow `Web`, GitHub Pages): Source = GitHub Actions, registros DNS, Custom domain y Enforce HTTPS (ver README → "iOS y web"). Confirmar que el repo es público (Pages en privado es pago) y que el login funciona desde el dominio (CORS de ORDS).
+- [ ] Google Play: crear la clave de subida y cargar los 4 Secrets `UPLOAD_*` (+ variable `FIRMA_PLAY_ESPERADA`), confirmar el paquete `com.facilitadores.app` antes de la primera subida (no se cambia después), subir a mano el primer `facilitadores.aab` a Play Console (prueba interna) y después evaluar la subida automática con una cuenta de servicio.
+- [ ] Modo sin conexión en Android: definir qué tiene que funcionar sin señal (ver agenda, marcar y enviar después…). Hoy el token vive solo en memoria y el login necesita el servidor.
 - [ ] Mi postulación → Documentos y postulantes que no son facilitadores: correr de nuevo `sql/postulacion_app_ethos.sql` (agrega las 7 columnas `*_URL`, `USUARIO` y el índice `UX_POSTULANTES_FAC_USUARIO_ANIO`; probar también con un usuario que no sea facilitador, como JOSEG; deben quedar 8 de 8 handlers y `[OK] Cloudinary configurado`), cambiar el *Asset folder* del preset `fcfacilitadores` (hoy `samples/ecommerce`), habilitar la entrega de PDF en Cloudinary, generar un **APK nuevo** (`expo-document-picker`) y probar foto, galería y PDF con un facilitador real.
 - [ ] Regenerar el API secret de Cloudinary (se pegó en un chat) y actualizarlo en Oracle con `PKG_CLOUDINARY_ETHOS.fijar_credenciales`.
 - [ ] Correr en APEX `sql/postulacion_app_ethos.sql` (4 de 4 handlers) y probar alta y corrección con un facilitador real. Confirmar que el año lectivo actual está en `ANIOS_LECTIVOS` y reemplazar el texto de "El proceso" por las etapas y requisitos reales.

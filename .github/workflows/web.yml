@@ -1,0 +1,96 @@
+# Publica la web / PWA de Facilitadores en GitHub Pages, con el dominio
+# https://facilitadoresfc.online, en cada push a main.
+#
+# Es la versión para iPhone (se instala desde Safari con "Agregar a pantalla de
+# inicio") y para cualquier navegador. Siempre necesita conexión: no hay service
+# worker ni caché sin conexión.
+#
+# Una sola vez, en GitHub:
+#   - Settings > Pages > Build and deployment > Source: "GitHub Actions".
+#   - Settings > Pages > Custom domain: facilitadoresfc.online, y después
+#     "Enforce HTTPS" cuando GitHub termine de emitir el certificado.
+#     Con despliegue por Actions el archivo CNAME del sitio NO configura el
+#     dominio: hay que cargarlo ahí. El CNAME se publica igual, como respaldo.
+#   - En el DNS del dominio: registros A a 185.199.108.153, 185.199.109.153,
+#     185.199.110.153 y 185.199.111.153, y CNAME de www a josegalvez1985.github.io.
+#
+# La app está armada para servirse en la raíz del dominio ("/"). En la URL
+# josegalvez1985.github.io/facilitador-hub/ no carga: los archivos se piden a "/".
+name: Web
+
+on:
+  push:
+    branches: [main]
+    # Backend, tests y documentación no cambian la web. docs/manual-usuario.md
+    # tampoco: el manual entra por src/facilitadores/manual.ts (npm run manual).
+    paths-ignore:
+      - "**.md"
+      - "sql/**"
+      - "docs/**"
+      - "__tests__/**"
+      - ".github/workflows/apk.yml"
+  workflow_dispatch:
+
+# Una publicación a la vez; si llegan dos pushes seguidos gana el último.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 por su npm 11, igual que el workflow del APK (package-lock.json).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar tipos
+        run: npx tsc --noEmit
+
+      # EXPO_PUBLIC_API_URL sale del .env del repo y queda fija en el JS.
+      - name: Exportar la web
+        env:
+          NODE_ENV: production
+        run: npx expo export --platform web --output-dir dist
+
+      # - 404.html = index.html: GitHub Pages no tiene reescrituras. Si alguien
+      #   recarga /horarios (o abre un enlace directo), Pages responde el 404.html,
+      #   que es la misma app, y Expo Router muestra la pantalla de esa ruta.
+      # - .nojekyll: los archivos de Expo están en _expo/, y Jekyll ignora las
+      #   carpetas que empiezan con "_".
+      # - CNAME: el dominio propio.
+      - name: Preparar para GitHub Pages
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
+          echo "facilitadoresfc.online" > dist/CNAME
+          ls -la dist
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: https://facilitadoresfc.online
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

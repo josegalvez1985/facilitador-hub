@@ -418,6 +418,48 @@ https://github.com/josegalvez1985/facilitador-hub/releases/download/apk-latest/f
 - Está firmado con la clave de depuración de la plantilla de Expo, igual en cada corrida. El workflow verifica la firma antes de publicar: si cambiara, el celular obligaría a desinstalar.
 - En GitHub, **Settings → General → Releases → Immutable releases** tiene que estar apagada; si no, no se puede reemplazar el APK.
 - Si el repositorio es privado, la descarga pide iniciar sesión en GitHub.
+- El JS va dentro del APK: la app **abre sin conexión**, pero los datos vienen del servidor.
+
+### Android: Google Play (AAB)
+
+El mismo workflow genera también **`facilitadores.aab`**, el archivo que se sube a Google Play Console, y lo publica en el release `apk-latest` junto al APK:
+
+```
+https://github.com/josegalvez1985/facilitador-hub/releases/download/apk-latest/facilitadores.aab
+```
+
+- Se genera solo si están cargados los Secrets de la **clave de subida** (abajo). Sin ellos, el workflow genera solo el APK, como antes.
+- El AAB se firma con la clave de subida; el APK sigue con la de depuración, así nadie tiene que desinstalar. Con **Play App Signing**, Google vuelve a firmar con su propia clave lo que instala, por eso la app de Play y el APK no se instalan uno encima del otro: quien pase a la de Play desinstala el APK una vez.
+- El `versionCode` es el número de corrida del workflow, igual que el del APK. Play no acepta repetir uno ya subido.
+- Por ahora se sube **a mano** en Play Console. La primera versión tiene que subirse a mano sí o sí; después se puede automatizar con una cuenta de servicio de Google Play.
+- Antes de la primera subida, confirmar el paquete `com.facilitadores.app` (`app.json`): en Play es único en el mundo y **no se puede cambiar** después.
+
+**Preparación (una sola vez):**
+
+1. Crear la clave de subida, en PowerShell, **fuera del repo** (`keytool` viene con Android Studio o cualquier JDK). Pide una contraseña:
+
+   ```powershell
+   keytool -genkeypair -v -storetype PKCS12 -keystore facilitadores-upload.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+   Guardá el `.jks` y la contraseña en un lugar seguro y con copia: sin ellos no se pueden subir versiones nuevas (Google permite reemplazarla, pero lleva días).
+
+2. Copiar el `.jks` en base64 al portapapeles:
+
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("facilitadores-upload.jks")) | Set-Clipboard
+   ```
+
+3. En GitHub, **Settings → Secrets and variables → Actions → Secrets**, cargar:
+
+   | Secret | Valor |
+   |---|---|
+   | `UPLOAD_KEYSTORE_BASE64` | lo copiado en el paso 2 |
+   | `UPLOAD_STORE_PASSWORD` | la contraseña del `.jks` |
+   | `UPLOAD_KEY_ALIAS` | `upload` |
+   | `UPLOAD_KEY_PASSWORD` | la misma contraseña (con PKCS12 es una sola) |
+
+4. Opcional pero recomendado: en la pestaña **Variables** de esa pantalla, `FIRMA_PLAY_ESPERADA` con el SHA-256 del certificado (sale con `keytool -list -v -keystore facilitadores-upload.jks -alias upload`, o del aviso del workflow). Así el workflow corta si el AAB sale firmado con otra clave.
 
 **Manual (EAS Build):** el APK se compila en la nube de Expo. Requiere una cuenta gratuita de Expo.
 
@@ -428,16 +470,33 @@ npm run build:apk
 
 Al terminar, EAS entrega un link y un código QR para descargar el `.apk` e instalarlo en el celular. Hay que permitir "instalar apps de origen desconocido". El perfil está en `eas.json` → `apk`.
 
-### iOS: PWA
+### iOS y web: PWA en facilitadoresfc.online
 
-En iPhone la app se instala como PWA (aplicación web) desde Safari:
+En iPhone la app se usa como PWA (aplicación web) desde **https://facilitadoresfc.online**: Safari → botón Compartir → **Agregar a pantalla de inicio**. Siempre necesita conexión (no hay modo sin conexión en la web).
 
-```sh
-npm run build:pwa   # genera la carpeta dist/
-```
+**Automático (GitHub Actions):** cada push a `main` publica la web en GitHub Pages ([.github/workflows/web.yml](.github/workflows/web.yml)): `expo export --platform web`, más un `404.html` igual al `index.html` (Pages no tiene reescrituras: así recargar `/horarios` o abrir un enlace directo carga la app), `.nojekyll` (por la carpeta `_expo/`) y `CNAME`. Los cambios que solo tocan `.md`, `sql/`, `docs/` o `__tests__/` no publican.
 
-1. Publicá la carpeta `dist/` en un hosting con **HTTPS**, por ejemplo `npx eas-cli@latest deploy` (EAS Hosting), Netlify o Vercel. Configurá el hosting para que todas las rutas devuelvan `index.html`.
-2. En el iPhone, abrí la URL en **Safari** → botón Compartir → **Agregar a pantalla de inicio**.
+**Preparación (una sola vez):**
+
+1. En GitHub, **Settings → Pages → Build and deployment → Source**: **GitHub Actions**.
+2. En el DNS de `facilitadoresfc.online`:
+
+   | Tipo | Nombre | Valor |
+   |---|---|---|
+   | A | `@` | `185.199.108.153` |
+   | A | `@` | `185.199.109.153` |
+   | A | `@` | `185.199.110.153` |
+   | A | `@` | `185.199.111.153` |
+   | CNAME | `www` | `josegalvez1985.github.io` |
+
+3. **Settings → Pages → Custom domain**: `facilitadoresfc.online`. Con despliegue por Actions el archivo `CNAME` no alcanza: hay que cargarlo ahí. Cuando GitHub emita el certificado, tildar **Enforce HTTPS** (la PWA y la ubicación necesitan HTTPS).
+4. Correr el workflow **Web** (pestaña Actions → **Run workflow**) o hacer un push.
+
+- La app se sirve en la **raíz** del dominio. En `josegalvez1985.github.io/facilitador-hub/` no carga, porque los archivos se piden a `/`.
+- GitHub Pages en un repositorio **privado** necesita un plan pago de GitHub.
+- Si después de publicar el login da "blocked by CORS policy", revisar en ORDS que el módulo `ethos` acepte el origen `https://facilitadoresfc.online`.
+
+**Manual:** `npm run build:pwa` genera `dist/`, que se puede publicar en cualquier hosting con HTTPS que devuelva `index.html` para todas las rutas.
 
 El ícono, el nombre y la pantalla completa salen de `public/manifest.json`, `public/apple-touch-icon.png` y `public/index.html`.
 
