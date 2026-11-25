@@ -18,7 +18,8 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { X, type LucideIcon } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { UserRound, X, type LucideIcon } from 'lucide-react-native';
 
 import { alpha, fonts, radius, toneColors, type FontWeight, type Palette, type Tone } from './theme';
 import { makeStyles, useTheme } from './theme-provider';
@@ -214,7 +215,7 @@ export function Dot({ color }: { color?: string }) {
 export function Brand({ size = 22 }: { size?: number }) {
   return (
     <View style={base.brand}>
-      <Image source={logo} style={base.brandMark} accessibilityLabel="Logo de Facilitadores" />
+      <Image source={logo} style={base.brandMark} accessibilityLabel="Logo de facilitadores" />
       <Text weight="extrabold" size={size}>
         facilitadores
       </Text>
@@ -283,6 +284,21 @@ export function SectionHeading({ title, children }: { title: ReactNode; children
     <View style={base.sectionHeading}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>{typeof title === 'string' ? <Text weight="bold" size={16}>{title}</Text> : title}</View>
       {children}
+    </View>
+  );
+}
+
+/** Estado vacío compartido de las secciones que son solo para facilitadores registrados. */
+export function SinFacilitador() {
+  const { colors } = useTheme();
+  const router = useRouter();
+  return (
+    <View style={{ paddingVertical: 48, alignItems: 'center', gap: 16 }}>
+      <UserRound size={24} color={colors.mutedForeground} />
+      <Text color={colors.mutedForeground} style={{ textAlign: 'center', lineHeight: 21, maxWidth: 420 }}>
+        Esta sección es para quienes ya están registrados como facilitadores/as. Si querés sumarte, completá tu postulación.
+      </Text>
+      <Button label="Ir a Mi postulación" onPress={() => router.navigate('/postulacion')} />
     </View>
   );
 }

@@ -9,7 +9,7 @@
 
 ## Primeros pasos
 
-Facilitadores es tu espacio para marcar tus clases, seguir tu agenda y ver el avance de tus manuales.
+La app de facilitadores es tu espacio para marcar tus clases, seguir tu agenda y ver el avance de tus manuales.
 
 ### Ingresar
 
@@ -17,6 +17,7 @@ Facilitadores es tu espacio para marcar tus clases, seguir tu agenda y ver el av
 2. Si querés que el celular los recuerde, tildá **Recordar usuario y contraseña**.
 3. Tocá **Ingresar**.
 
+- Si falta el usuario o la contraseña, el campo vacío se marca en rojo y te dice "Escribí tu usuario." o "Escribí tu contraseña.".
 - La sesión dura **6 horas**. Después te pide ingresar de nuevo.
 - **En la computadora** (navegador): si actualizás la página o abrís la app en otra pestaña, seguís dentro. Si salís en una pestaña, se cierra en todas. En una computadora compartida, acordate de tocar **Salir** al terminar.
 - **En el celular** (app de Android): si cerrás la app, al volver a abrirla te pide ingresar de nuevo.
@@ -54,11 +55,11 @@ Las secciones están en el menú de la izquierda.
 
 ### La campana
 
-Arriba a la derecha, la campana 🔔 te avisa cuál es **tu próxima clase**: el horario, la institución, el grado y el próximo índice del manual. El punto de color indica que hay un aviso que todavía no viste; desaparece al abrirla.
+Arriba a la derecha, la campana 🔔 te avisa cuál es **tu próxima clase**: el horario, la institución, el grado y el próximo índice del manual. Si tenés una postulación sin terminar, también te muestra cuánto te falta y cuándo cierra. El punto de color indica que hay un aviso que todavía no viste; desaparece al abrirla.
 
 ## Inicio
 
-Es la pantalla principal. De arriba hacia abajo:
+Es la pantalla principal. Si todavía no sos facilitador (por ejemplo, si sos postulante), Inicio te invita a completar o revisar tu **Mi postulación**, sin indicadores ni clases. Si sos facilitador, de arriba hacia abajo:
 
 - **Saludo con tu foto**: tocala para ir a tu perfil.
 - **Frase del día**: una distinta cada día.
@@ -67,6 +68,7 @@ Es la pantalla principal. De arriba hacia abajo:
 - **Indicadores**: clases de esta semana, marcaciones del mes, materiales desarrollados e instituciones.
 - **Tus clases de hoy**: cada clase con su horario, institución, manual y próximo índice, con el botón **Marcar**.
 - **Actividad reciente**: tus últimas 5 intervenciones.
+- Si tenés una postulación sin terminar, aparece un aviso con tu avance (por ejemplo "3 de 9 pasos completos"), los archivos que faltan y el botón **Completar mi postulación**. Cuando faltan 7 días o menos para el cierre, dice **Cierra hoy**, **Cierra mañana** o **Cierra en N días**.
 
 ## Marcar una intervención
 
@@ -78,7 +80,7 @@ Tocá **Marcar** y completá los 5 pasos. Al abrir, la app pide tu **ubicación*
 4. **¿Desarrolló la clase?** Elegí **Sí** o **No**. Con "No" tenés que indicar el motivo.
 5. **Observación**: opcional, salvo con "No" y motivo **Otros**, donde es obligatoria.
 
-Revisá el resumen, tocá **Guardar intervención** y confirmá.
+Revisá el resumen y tocá **Guardar intervención**. La app pregunta **¿Guardamos esta intervención?** y te muestra el resumen con "Revisá los datos antes de guardar.": confirmá para guardarla.
 
 > La ubicación se ajusta sola mientras completás los datos: no tenés que hacer nada. Solo mantené el GPS activado.
 
@@ -93,7 +95,7 @@ Revisá el resumen, tocá **Guardar intervención** y confirmá.
 
 ## Mi agenda
 
-Tus clases del año lectivo, en tres vistas:
+Tus clases del año lectivo, en tres vistas. En el celular, los 7 días entran completos en la pantalla:
 
 - **Por día**: la semana actual, con hoy resaltado. Cada clase muestra el horario, turno, grado y sección, institución, manual, énfasis y el **próximo índice** con su avance (por ejemplo "3 de 12"). Las de hoy tienen el botón **Marcar**.
 - **Línea de tiempo**: el día como una columna de horas, con cada clase del color de su manual y una línea roja en la hora actual.
@@ -171,6 +173,10 @@ Acá enviás la factura de cada mes: le sacás una foto y completás sus datos. 
 
 > Va una sola factura por mes, y no podés cargar un mes que todavía no empezó ni una fecha posterior a hoy. La foto es obligatoria.
 
+## Secciones solo para facilitadores
+
+Si todavía no sos facilitador registrado (por ejemplo, si sos postulante), en **Marcar**, **Intervenciones realizadas**, **Historial**, **Mi agenda**, **Mis materiales**, **Evaluaciones**, **Formularios** y **Mis facturas** ves el aviso "Esta sección es para quienes ya están registrados como facilitadores/as". Tocá **Ir a Mi postulación** para completar la tuya.
+
 ## Mi postulación
 
 Acá te postulás para el año lectivo: para seguir como facilitador, o para empezar a serlo si todavía no lo sos. Es una por año.
@@ -178,24 +184,24 @@ Acá te postulás para el año lectivo: para seguir como facilitador, o para emp
 1. Abrí **Menú** y tocá **Mi postulación**.
 2. Tocá **Empezar mi postulación**. Si ya sos facilitador, el formulario arranca con los datos que la fundación tiene de vos: revisalos y corregí lo que haya cambiado. Si ya te postulaste otro año, tocá **Usar mis datos de** ese año: el formulario arranca completo y solo cambiás lo que haya cambiado.
 3. En **El proceso** leé las etapas y los requisitos de este año. Para seguir tenés que tocar **Estoy de acuerdo**.
-4. Completá los pasos: **El proceso**, **Datos personales**, **Domicilio**, **Estudios**, **Trabajo y recursos**, **Disponibilidad**, **Iglesia**, **Cobro** y **Documentos**. Tocá **Siguiente** para pasar al próximo. Podés tocar **Guardar** en cualquier momento, aunque falten datos, y terminarla después. Para enviarla tiene que estar todo completo, salvo lo marcado **(opcional)**: en el último paso ves qué falta.
+4. Completá los 9 pasos (arriba ves "Paso X de 9" y, en el último, "Último paso"): **El proceso**, **Datos personales**, **Domicilio**, **Estudios**, **Trabajo y recursos**, **Disponibilidad**, **Iglesia**, **Cobro** y **Documentos**. Tocá **Siguiente** para pasar al próximo. Cada paso te recuerda que para enviar hay que completar todo salvo lo marcado **(opcional)**, y que para guardar no hace falta. Podés tocar **Guardar** en cualquier momento, aunque falten datos, y terminarla después. Para enviarla tiene que estar todo completo, salvo lo marcado **(opcional)**: en el último paso ves qué falta.
 5. En **Revisar y enviar** mirá el resumen. Con **Editar** volvés a cualquier sección.
 6. Tocá **Enviar postulación**.
 
 - **Ubicación de tu casa**: si estás en tu casa, tocá **Usar mi ubicación**. Si no, abrí Google Maps, buscá tu casa, tocá **Compartir** y pegá el enlace.
 - **Documentos**: son obligatorios. Siempre se piden una **foto tipo carnet**, tu **cédula de los dos lados**, tu **currículum (CV)**, el **certificado de no agresor** y los certificados de **antecedentes judiciales** y **policiales**. Además, de cada estudio que terminaste se pide el **título**, y del que estás cursando, una **constancia de estudios**.
   - Para cada uno tocá **Sacar foto**, **Galería** o **PDF**. Se sube enseguida y aparece una marca verde. La foto carnet va solo en foto.
-  - Si te equivocaste, elegilo de nuevo o tocá **Quitar**: el anterior se borra. Con **Ver** lo abrís.
+  - Cuando un documento ya está subido ves **Ver**, **Reemplazar** y **Quitar**. **Reemplazar** despliega **Sacar foto**, **Galería** y **PDF** (la foto carnet, solo foto): el anterior se borra al elegir el nuevo. Si la miniatura no carga, se ve un ícono de documento.
   - Si ya habías enviado la postulación, el documento anterior se borra recién cuando guardás los cambios.
   - Borrar la foto de la galería de tu celular no la saca de la postulación: para eso usá **Quitar**.
   - Sacá la foto con buena luz y que se lea todo. Un PDF puede pesar hasta 10 MB.
 - **Cuenta para el cobro**: si la cuenta está a tu nombre, **La cuenta es mía** completa el titular con tus datos.
 - Podés volver a un paso que ya pasaste tocándolo en la barra de arriba.
-- **No hace falta completar todo de una vez.** Tocá **Guardar** (arriba, en cualquier paso) y seguí otro día, aunque cierres la app o entres desde otro celular: tocá **Seguir donde dejaste**.
+- **No hace falta completar todo de una vez.** Tocá **Guardar** (arriba, en cualquier paso) y seguí otro día, aunque cierres la app o entres desde otro celular: tocá **Seguir donde dejaste** (o **Seguir corrigiendo**, si ya la habías enviado): se abre el primer paso con algo pendiente, o **Revisar y enviar** si está todo.
 - Para **enviarla** tiene que estar todo completo. En **Revisar y enviar** ves lo que te falta; si falta algo, el botón dice **Guardar y terminar después**.
-- Mientras falten datos o archivos, en **Inicio** y en la **campana** de notificaciones te aparece un aviso con lo que falta (por ejemplo "Domicilio: departamento, ciudad" y "Faltan archivos: CV") y el botón **Completar mi postulación**. Si todavía no la empezaste, el aviso te invita a empezarla.
+- Mientras falten datos o archivos, en **Inicio** y en la **campana** de notificaciones te aparece un aviso corto con tu avance ("N de 9 pasos completos" con una barra), los archivos que faltan y el botón **Completar mi postulación**. El detalle de lo que falta en cada paso lo ves en **Mi postulación**, dentro de la tarjeta del año, donde los pasos completos llevan tilde. Si todavía no la empezaste, el aviso te invita a empezarla.
 - Si salís sin tocar **Guardar**, lo que cargaste queda solo mientras la app esté abierta.
-- La postulación se puede cargar y corregir **solo mientras el período de postulación esté abierto**. En la pantalla ves hasta cuándo ("Abierta hasta el…"). Cuando cierra, tu postulación se sigue viendo pero ya no se puede cambiar.
+- La postulación se puede cargar y corregir **solo mientras el período de postulación esté abierto**. En la pantalla ves hasta cuándo ("Abierta hasta el…"); cuando faltan 7 días o menos, además se destaca **Cierra hoy**, **Cierra mañana** o **Cierra en N días**. Cuando cierra, tu postulación se sigue viendo pero ya no se puede cambiar.
 - Una vez enviada, ves el resumen y la podés **Corregir** mientras el período esté abierto.
 - Si preferís empezar de cero, tocá **Eliminar mi postulación** al final del resumen y confirmá. Se borran la postulación y los documentos que subiste, y podés cargarla de nuevo.
 
@@ -203,6 +209,7 @@ Acá te postulás para el año lectivo: para seguir como facilitador, o para emp
 
 ## Mi perfil
 
+- **Rol**: te muestra si sos **Facilitador/a** o **Postulante** (también en el Menú).
 - **Información personal**: tu nombre, usuario y correo. Para corregirlos, pedíselo a tu coordinador.
 - **Foto de perfil**: tocá tu avatar o **Cargar foto** y elegí una imagen de la galería. **Quitar** vuelve a tus iniciales.
 - **Apariencia**: modo claro, oscuro o automático, y 6 temas de color.

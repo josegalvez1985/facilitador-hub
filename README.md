@@ -162,6 +162,8 @@ La sesión principal hace de coordinadora: decide qué agentes intervienen, les 
 | `registrar-decision` | Cuando se decide algo que cambia una regla → `AGENTS.md` |
 | `preparar-publicacion` | Antes de un push a `main` (que publica la web y el APK) |
 
+Para cuidar el consumo, [CLAUDE.md](CLAUDE.md) tiene una **política de optimización**: las tareas simples se resuelven sin agentes, no se usan dos agentes para lo mismo, `opus` queda para decisiones complejas y auditorías, y los agentes devuelven resúmenes.
+
 Reglas que el equipo respeta: no corre `npm test` ni escribe tests salvo pedido (valida con `npm run typecheck` y ESLint sobre lo cambiado); los scripts de `sql/` los ejecutás vos en APEX; no hace push ni publica sin tu aprobación.
 
 Para instalar lo mismo en otro proyecto: [docs/guia-equipo-agentes-claude.md](docs/guia-equipo-agentes-claude.md).

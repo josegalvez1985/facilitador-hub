@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { CalendarDays, ClipboardCheck, RefreshCw, ThumbsUp, TrendingUp, UserRound, type LucideIcon } from 'lucide-react-native';
+import { CalendarDays, ClipboardCheck, RefreshCw, ThumbsUp, TrendingUp, type LucideIcon } from 'lucide-react-native';
 
 import { useSession } from '../auth/session';
 import { formatearFecha, listarEvaluaciones, TOTAL_ITEMS, type Evaluacion } from '../evaluaciones';
 import { makeStyles, useTheme } from '../theme-provider';
-import { Badge, Button, Card, PageTitle, StatIcon, Text } from '../ui';
+import { Badge, Button, Card, PageTitle, StatIcon, Text, SinFacilitador } from '../ui';
 
 // La página APEX pagina de a 15 filas.
 const POR_PAGINA = 15;
@@ -15,7 +15,7 @@ type Resultado = { clave: string } & Exclude<Estado, { tipo: 'cargando' }>;
 
 export function EvaluationsScreen() {
   const { colors } = useTheme();
-  const { sesion, facilitador, reintentarFacilitador } = useSession();
+  const { facilitador, reintentarFacilitador } = useSession();
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [intento, setIntento] = useState(0);
   const [visibles, setVisibles] = useState(POR_PAGINA);
@@ -71,12 +71,7 @@ export function EvaluationsScreen() {
     return (
       <>
         {encabezado}
-        <View style={{ paddingVertical: 56, alignItems: 'center', gap: 16 }}>
-          <UserRound size={24} color={colors.mutedForeground} />
-          <Text color={colors.mutedForeground} style={{ textAlign: 'center', lineHeight: 21 }}>
-            Tu usuario {sesion?.usuario ? `(${sesion.usuario}) ` : ''}no está registrado como facilitador.{'\n'}No hay evaluaciones para mostrar.
-          </Text>
-        </View>
+        <SinFacilitador />
       </>
     );
   }

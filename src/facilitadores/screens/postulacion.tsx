@@ -8,15 +8,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { CalendarX2, CircleCheck, ClipboardPen, Copy, Pencil, RefreshCw, RotateCcw, Trash2, UserRound } from 'lucide-react-native';
+import { CalendarX2, Check, CircleCheck, ClipboardPen, Copy, Pencil, RefreshCw, RotateCcw, Trash2, UserRound } from 'lucide-react-native';
 
 import { useSession } from '../auth/session';
-import { avisoDe, TarjetaAviso, useFijarAviso } from '../aviso-postulacion';
+import { AvancePostulacion, avisoDe, DetalleFaltantes, PildoraPlazo, TarjetaAviso, useFijarAviso } from '../aviso-postulacion';
 import { FormularioPostulacion, Resumen } from '../postulacion-form';
 import {
   borrarBorrador,
   cargarPostulacion,
   datosVacios,
+  faltantes,
   descartarGuardada,
   eliminarPostulacion,
   FALTA_PUBLICAR,
@@ -26,6 +27,10 @@ import {
   textoPeriodo,
   leerBorrador,
   PASOS,
+  PASOS_A_COMPLETAR,
+  pasoParaRetomar,
+  pasosCompletos,
+  textoCierre,
   quitarDocumentosDe,
   type Datos,
   type EstadoPostulacion,
@@ -36,7 +41,7 @@ import { useToast } from '../toast';
 import { Badge, Button, Card, Modal, ModalActions, ModalText, PageTitle, Text } from '../ui';
 
 type Resultado = { clave: string } & ({ tipo: 'error'; mensaje: string } | { tipo: 'listo'; estado: EstadoPostulacion });
-type Form = { datos: Datos; paso: number };
+type Form = { datos: Datos; paso: number; alcanzado?: number };
 
 export function PostulacionScreen() {
   const { colors } = useTheme();
@@ -112,6 +117,7 @@ export function PostulacionScreen() {
         proceso={estado.estado.proceso}
         datosIniciales={form.datos}
         pasoInicial={form.paso}
+        alcanzadoInicial={form.alcanzado}
         esCorreccion={estado.estado.postulacion !== null}
         onCambio={onCambio}
         onSalir={() => setForm(null)}
@@ -183,6 +189,9 @@ export function PostulacionScreen() {
   // Lo cargado sin enviar: lo de esta sesión (en memoria) o, si no, lo guardado sin terminar en el servidor.
   const borrador = leerBorrador(claveBorrador) ?? (e.guardada ? { datos: e.guardada.datos, paso: e.guardada.paso } : null);
   // "Sin empezar" ya lo dice la tarjeta de abajo: acá solo lo que falta.
+  const cierre = textoCierre(e);
+  // Avance y tildes con lo mismo que usa "Seguir donde dejaste": el borrador en memoria si lo hay.
+  const avance = borrador ? faltantes(borrador.datos) : null;
   const aviso = (() => {
     const a = avisoDe(e);
     return a && a.tipo !== 'sin-empezar' ? a : null;
@@ -201,7 +210,7 @@ export function PostulacionScreen() {
       <>
         {encabezado}
         <View style={{ maxWidth: 720, width: '100%', gap: 16 }}>
-          {aviso && <TarjetaAviso aviso={aviso} />}
+          {aviso && <TarjetaAviso aviso={aviso} detalle />}
           <Card style={s.hero}>
             <View style={[s.heroIcono, { backgroundColor: colors.successSoft }]}>
               <CircleCheck size={26} color={colors.success} />
@@ -223,7 +232,7 @@ export function PostulacionScreen() {
           </Card>
           {e.abierta && (
           <View style={s.acciones}>
-            <Button icon={Pencil} label={borrador ? `Seguir corrigiendo (paso ${borrador.paso + 1})` : 'Corregir mi postulación'} onPress={() => setForm(borrador ? { datos: borrador.datos, paso: borrador.paso } : { datos: { ...p.datos, acepta_proceso: 'DE_ACUERDO' }, paso: 1 })} />
+            <Button icon={Pencil} label={borrador ? 'Seguir corrigiendo' : 'Corregir mi postulación'} onPress={() => setForm(borrador ? { datos: borrador.datos, paso: pasoParaRetomar(borrador.datos), alcanzado: PASOS.length - 1 } : { datos: { ...p.datos, acepta_proceso: 'DE_ACUERDO' }, paso: 1 })} />
             {borrador && (
               <Button
                 variant="outline"
@@ -285,7 +294,6 @@ export function PostulacionScreen() {
     <>
       {encabezado}
       <View style={{ maxWidth: 720, width: '100%', gap: 16 }}>
-        {aviso && <TarjetaAviso aviso={aviso} />}
         <Card style={s.hero}>
           <View style={[s.heroIcono, { backgroundColor: colors.secondary }]}>
             <ClipboardPen size={26} color={colors.primaryText} />
@@ -295,31 +303,56 @@ export function PostulacionScreen() {
             <Text weight="bold" size={20}>
               Postulación {e.anio}
             </Text>
+            {cierre ? (
+              <View style={{ alignSelf: 'flex-start' }}>
+                <PildoraPlazo texto={cierre} />
+              </View>
+            ) : null}
             {textoPeriodo(e) ? (
               <Text size={12} weight="semibold" color={colors.primaryText}>
                 {textoPeriodo(e)}
               </Text>
             ) : null}
             <Text size={13} color={colors.mutedForeground} style={{ lineHeight: 20 }}>
-              {e.esFacilitador ? 'Contale a la fundación que querés seguir como facilitador este año y actualizá tus datos.' : 'Contale a la fundación que querés ser facilitador este año.'} Son {PASOS.length - 1} pasos cortos y te lleva unos 10 minutos.
+              {e.esFacilitador ? 'Contale a la fundación que querés seguir como facilitador este año y actualizá tus datos.' : 'Contale a la fundación que querés ser facilitador este año.'} Son {PASOS_A_COMPLETAR} pasos cortos, después revisás y enviás. Te lleva unos 10 minutos.
             </Text>
+            {avance ? (
+              <View style={{ gap: 8, marginTop: 4 }}>
+                <AvancePostulacion completos={pasosCompletos(avance)} />
+                {avance.pasos.length === 0 && avance.archivos.length === 0 ? (
+                  <Text size={13} color={colors.mutedForeground}>
+                    Ya está todo completo: solo falta que la envíes.
+                  </Text>
+                ) : (
+                  <DetalleFaltantes aviso={avance} />
+                )}
+              </View>
+            ) : null}
           </View>
         </Card>
 
         <View style={s.pasos}>
-          {PASOS.slice(1, -1).map((p, i) => (
-            <View key={p.id} style={s.pasoChip}>
-              <Text size={11} weight="bold" color={colors.primaryText}>
-                {i + 1}
-              </Text>
-              <Text size={12}>{p.titulo}</Text>
-            </View>
-          ))}
+          {PASOS.slice(0, -1).map((p, i) => {
+            // Con algo ya cargado, los pasos completos llevan tilde.
+            const completo = !!avance && !avance.pasos.some((x) => x.paso === i) && !(p.id === 'documentos' && avance.archivos.length > 0);
+            return (
+              <View key={p.id} style={s.pasoChip} accessible accessibilityLabel={`Paso ${i + 1}: ${p.titulo}${avance ? (completo ? ', completo' : ', falta completar') : ''}`}>
+                {completo ? (
+                  <Check size={13} color={colors.success} />
+                ) : (
+                  <Text size={11} weight="bold" color={colors.primaryText}>
+                    {i + 1}
+                  </Text>
+                )}
+                <Text size={12}>{p.titulo}</Text>
+              </View>
+            );
+          })}
         </View>
 
         {borrador ? (
           <View style={s.acciones}>
-            <Button size="lg" icon={Pencil} label={`Seguir donde dejaste (paso ${borrador.paso + 1})`} onPress={() => setForm({ datos: borrador.datos, paso: borrador.paso })} />
+            <Button size="lg" icon={Pencil} label="Seguir donde dejaste" onPress={() => setForm({ datos: borrador.datos, paso: pasoParaRetomar(borrador.datos), alcanzado: Math.max(borrador.paso, pasoParaRetomar(borrador.datos)) })} />
             <Button
               variant="outline"
               icon={RotateCcw}

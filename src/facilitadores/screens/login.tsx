@@ -11,6 +11,7 @@ import { ErrorApi } from '../auth/api';
 import { activarBiometria, credencialesConBiometria, desactivarBiometria, estadoBiometria, nombreBiometria, type Biometria } from '../auth/biometria';
 import { getPasswordRecordada, getUsuarioRecordado, setPasswordRecordada, setUsuarioRecordado } from '../auth/recordar';
 import { useSession } from '../auth/session';
+import { hoy } from '../fechas';
 import { useLayout } from '../shell';
 import { alpha, radius } from '../theme';
 import { makeStyles, useTheme } from '../theme-provider';
@@ -32,6 +33,8 @@ export function LoginScreen() {
   const [recordar, setRecordar] = useState(false);
   const [visible, setVisible] = useState(false);
   const [error, setError] = useState('');
+  // Campos vacíos marcados al intentar entrar (se limpian al escribir).
+  const [faltan, setFaltan] = useState({ usuario: false, password: false });
   const [cargando, setCargando] = useState(false);
   const [apk] = useState(ofrecerApk);
   // Huella / rostro (solo APK): si el celular puede, y si está activada (bio.usuario).
@@ -117,7 +120,8 @@ export function LoginScreen() {
     if (cargando) return;
     setError('');
     if (!usuario || !password) {
-      setError('Ingresa tu usuario y contraseña');
+      setFaltan({ usuario: !usuario, password: !password });
+      setError(!usuario && !password ? 'Escribí tu usuario y tu contraseña.' : !usuario ? 'Escribí tu usuario.' : 'Escribí tu contraseña.');
       return;
     }
     setCargando(true);
@@ -165,20 +169,30 @@ export function LoginScreen() {
               label="Usuario"
               icon={UserRound}
               value={usuario}
-              onChangeText={setUsuario}
+              onChangeText={(t) => {
+                setUsuario(t);
+                setFaltan((f) => ({ ...f, usuario: false }));
+              }}
+              accessibilityLabel="Usuario"
+              aria-invalid={faltan.usuario}
               placeholder="Tu usuario"
               autoCapitalize="none"
               autoCorrect={false}
               autoComplete="username"
               textContentType="username"
               returnKeyType="next"
-              style={s.input16}
+              style={[s.input16, faltan.usuario && s.inputError]}
             />
             <Field
               label="Contraseña"
               icon={LockKeyhole}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(t) => {
+                setPassword(t);
+                setFaltan((f) => ({ ...f, password: false }));
+              }}
+              accessibilityLabel="Contraseña"
+              aria-invalid={faltan.password}
               placeholder="Tu contraseña"
               secureTextEntry={!visible}
               autoCapitalize="none"
@@ -187,7 +201,7 @@ export function LoginScreen() {
               textContentType="password"
               returnKeyType="go"
               onSubmitEditing={() => void onSubmit()}
-              style={s.input16}
+              style={[s.input16, faltan.password && s.inputError]}
               right={
                 <Button size="icon" variant="ghost" icon={visible ? EyeOff : Eye} accessibilityLabel={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'} onPress={() => setVisible(!visible)} />
               }
@@ -221,7 +235,12 @@ export function LoginScreen() {
               />
             ) : null}
           </View>
-          {apk && (
+          {apk && desktop && (
+            <View style={[s.apk, { alignItems: 'center' }]}>
+              <Button variant="link" size="sm" icon={Download} label="Descargar la app para Android" onPress={descargarApk} />
+            </View>
+          )}
+          {apk && !desktop && (
             <View style={s.apk}>
               <Button variant="outline" icon={Download} label="Descargar la app para Android" onPress={descargarApk} />
               <Text size={12} color={colors.mutedForeground} style={{ textAlign: 'center', marginTop: 8 }}>
@@ -230,7 +249,7 @@ export function LoginScreen() {
             </View>
           )}
           <Text size={10} color={colors.mutedForeground} style={{ textAlign: 'center', marginTop: 40 }}>
-            © {new Date().getFullYear()} Facilitadores · Tu vocación nos conecta.
+            © {hoy().getFullYear()} facilitadores · Tu vocación nos conecta.
           </Text>
     </>
   );
@@ -323,6 +342,7 @@ const useStyles = makeStyles((colors) =>
     manija: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border, marginBottom: 22 },
     // 16 px: Safari de iOS (PWA) no hace zoom al enfocar el campo.
     input16: { fontSize: 16 },
+    inputError: { borderColor: colors.destructive, borderWidth: 2 },
     apk: { marginTop: 22, paddingTop: 22, borderTopWidth: 1, borderTopColor: colors.border },
     remember: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -4, marginBottom: 18, alignSelf: 'flex-start' },
     checkbox: { width: 20, height: 20, borderRadius: radius.sm, borderWidth: 1.5, borderColor: colors.mutedForeground, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center' },

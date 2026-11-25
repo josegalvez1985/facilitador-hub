@@ -14,7 +14,7 @@ import { cargarMateriales, textoIndice, type ManualFacilitador } from '../materi
 import { useLayout } from '../shell';
 import { alpha, radius } from '../theme';
 import { makeStyles, useTheme } from '../theme-provider';
-import { Badge, Button, Card, PageTitle, Text } from '../ui';
+import { Badge, Button, Card, PageTitle, Text, SinFacilitador } from '../ui';
 
 type Filtro = 'todos' | 'curso' | 'completos';
 type Resultado = { clave: string } & ({ tipo: 'error'; mensaje: string } | { tipo: 'listo'; manuales: ManualFacilitador[] });
@@ -67,7 +67,7 @@ export function MaterialsScreen() {
     return (
       <>
         {encabezado}
-        <Vacio texto="Tu usuario no está registrado como facilitador." />
+        <SinFacilitador />
       </>
     );
   }

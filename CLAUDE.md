@@ -63,7 +63,17 @@ Además están los skills integrados de Claude Code: `/code-review`, `/security-
 - Análisis independientes pueden ir en paralelo; dos agentes nunca editan los mismos archivos a la vez.
 - En tareas dependientes, esperar el resultado anterior antes de delegar la implementación.
 - Si hay desacuerdo técnico, presentar alternativas, impacto y recomendación; no ocultarlo.
-- Los subagentes también consumen el límite de uso: no delegar lo que se resuelve en pocos pasos.
+
+## Política de optimización de consumo
+Los subagentes trabajan en un contexto propio y devuelven solo un resumen, lo que ahorra contexto en la conversación principal, pero sus tokens también consumen el límite de uso. El objetivo no es tener muchos agentes trabajando a la vez, sino el agente correcto, con el modelo adecuado y el mínimo contexto necesario.
+
+- **Ejecución directa primero**: las tareas simples o mecánicas (pocos pasos, un archivo, un dato) las resuelve la sesión principal, sin convocar agentes.
+- **Delegar solo cuando aporta valor**: especialización real, contexto independiente (investigar muchos archivos y traer solo la conclusión) o trabajo en paralelo que lo justifique.
+- **Sin agentes duplicados**: nunca dos o más agentes investigando lo mismo. Si un análisis ya se hizo en la conversación, se reutiliza; no se repite.
+- **Modelo según la tarea**: modelos económicos (`haiku`, `sonnet`) para lo rutinario; `opus` reservado para decisiones complejas y auditorías importantes (seguridad, revisión de cambios sensibles, análisis de páginas APEX); `fable`, como se indicó arriba.
+- **Contexto mínimo**: el pedido al subagente indica los archivos relevantes y lo que ya se sabe, para que no vuelva a explorar todo el repositorio. No cargar skills que la tarea no necesita.
+- **Resultados resumidos**: pedir a cada subagente hallazgos, cambios hechos (archivos y líneas) y pendientes, en forma concisa; nunca que copie el contenido de los archivos que analizó.
+- **Paralelo con criterio**: agentes en paralelo aceleran, pero suman consumo; usarlos solo cuando las tareas son realmente independientes.
 
 ## Protocolo
 1. **Descubrimiento**: `git status`, leer la documentación y el código afectados, separar hechos de supuestos.

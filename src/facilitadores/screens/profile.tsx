@@ -1,24 +1,27 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Building2, Camera, Check, Lock, LogOut, MapPin, Moon, Palette, Smartphone, Sun, SunMoon, Trash2, type LucideIcon } from 'lucide-react-native';
 
+import { cargarAgenda } from '../agenda';
 import { useSession } from '../auth/session';
 import { Ayuda } from '../ayuda';
-import { iniciales, institutions } from '../data';
+import { iniciales } from '../data';
 import { elegirFoto } from '../foto-perfil';
 import { useApp } from '../provider';
-import { useLayout } from '../shell';
+import { useLayout, useRol } from '../shell';
 import { useToast } from '../toast';
 import { palettes, radius, themes } from '../theme';
 import { makeStyles, useTheme, type AppearanceMode } from '../theme-provider';
-import { Avatar, Badge, Button, Card, PageTitle, Text } from '../ui';
+import { Avatar, Button, Card, PageTitle, Text } from '../ui';
 
 export function ProfileScreen() {
   const app = useApp();
   const { colors } = useTheme();
   const s = useStyles();
   const { desktop } = useLayout();
-  const { sesion, logout } = useSession();
+  const { sesion, logout, facilitador } = useSession();
+  const rol = useRol();
+  const instituciones = useInstituciones(facilitador.estado === 'listo' ? facilitador.id : null);
   const toast = useToast();
   const [cargandoFoto, setCargandoFoto] = useState(false);
   const fieldStyle = desktop ? s.half : s.full;
@@ -76,9 +79,8 @@ export function ProfileScreen() {
               {app.name}
             </Text>
             <Text size={13} color={colors.mutedForeground} style={{ marginTop: 6 }}>
-              Facilitadora educativa
+              {rol}
             </Text>
-            <Badge tone="success" icon={Check} label="Perfil activo" style={{ marginTop: 12 }} />
             <View style={[s.row, { marginTop: 12, flexWrap: 'wrap' }]}>
               <Button
                 variant="outline"
@@ -121,29 +123,78 @@ export function ProfileScreen() {
 
         <Ayuda />
 
-        <Text weight="bold" size={16} style={{ marginTop: 38, marginBottom: 18 }}>
-          Mis instituciones
-        </Text>
-        {institutions.map((inst) => (
-          <Card key={inst} style={{ marginBottom: 12 }}>
+        {instituciones.tipo !== 'oculto' && (
+          <Text weight="bold" size={16} style={{ marginTop: 38, marginBottom: 18 }}>
+            Mis instituciones
+          </Text>
+        )}
+        {instituciones.tipo === 'cargando' && <ActivityIndicator color={colors.mutedForeground} style={{ alignSelf: 'flex-start', marginBottom: 12 }} accessibilityLabel="Cargando tus instituciones" />}
+        {instituciones.tipo === 'error' && (
+          <View style={{ marginBottom: 12, gap: 8, alignItems: 'flex-start' }}>
+            <Text size={12} color={colors.destructive} accessibilityRole="alert">
+              No se pudieron cargar tus instituciones.
+            </Text>
+            <Button variant="outline" size="sm" label="Reintentar" onPress={instituciones.reintentar} />
+          </View>
+        )}
+        {instituciones.tipo === 'listo' && !instituciones.lista.length && (
+          <Text size={12} color={colors.mutedForeground} style={{ marginBottom: 12 }}>
+            No tenés instituciones asignadas en el año lectivo actual.
+          </Text>
+        )}
+        {instituciones.tipo === 'listo' &&
+          instituciones.lista.map((inst) => (
+          <Card key={inst.nombre} style={{ marginBottom: 12 }}>
             <View style={s.row}>
               <Building2 size={17} color={colors.mutedForeground} />
               <Text size={12} color={colors.mutedForeground} style={{ flexShrink: 1 }}>
-                {inst}
+                {inst.nombre}
               </Text>
             </View>
-            <View style={[s.row, { marginTop: 12 }]}>
-              <MapPin size={13} color={colors.mutedForeground} />
-              <Text size={11} color={colors.mutedForeground}>
-                Asunción, Paraguay
-              </Text>
-            </View>
+            {!!inst.lugar && (
+              <View style={[s.row, { marginTop: 12 }]}>
+                <MapPin size={13} color={colors.mutedForeground} />
+                <Text size={11} color={colors.mutedForeground}>
+                  {inst.lugar}
+                </Text>
+              </View>
+            )}
           </Card>
         ))}
         <Button variant="outline" icon={LogOut} label="Cerrar sesión" onPress={() => void logout()} style={{ alignSelf: 'flex-start', marginTop: 8 }} />
       </View>
     </>
   );
+}
+
+type Institucion = { nombre: string; lugar: string };
+type Instituciones = { tipo: 'oculto' } | { tipo: 'cargando' } | { tipo: 'error'; reintentar: () => void } | { tipo: 'listo'; lista: Institucion[] };
+
+/** Instituciones distintas de mi-agenda. Sin facilitador resuelto y no nulo no se pide nada (aislamiento). */
+function useInstituciones(id: number | null): Instituciones {
+  const [r, setR] = useState<{ id: number; lista: Institucion[] | null } | null>(null);
+  const [intento, setIntento] = useState(0);
+  useEffect(() => {
+    if (id === null) return;
+    let vigente = true;
+    cargarAgenda()
+      .then((a) => {
+        const vistas = new Map<string, Institucion>();
+        for (const c of a.clases) {
+          if (!c.institucion || vistas.has(c.institucion)) continue;
+          vistas.set(c.institucion, { nombre: c.institucion, lugar: [c.ciudad, c.departamento].filter(Boolean).join(' · ') });
+        }
+        if (vigente) setR({ id, lista: [...vistas.values()] });
+      })
+      .catch(() => vigente && setR({ id, lista: null }));
+    return () => {
+      vigente = false;
+    };
+  }, [id, intento]);
+  if (id === null) return { tipo: 'oculto' };
+  if (!r || r.id !== id) return { tipo: 'cargando' };
+  if (r.lista === null) return { tipo: 'error', reintentar: () => { setR(null); setIntento((n) => n + 1); } };
+  return { tipo: 'listo', lista: r.lista };
 }
 
 const modes: { id: AppearanceMode; label: string; icon: LucideIcon }[] = [

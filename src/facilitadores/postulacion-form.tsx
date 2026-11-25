@@ -28,6 +28,7 @@ import {
   LocateFixed,
   MapPinHouse,
   Pencil,
+  RefreshCw,
   Save,
   Search,
   Send,
@@ -38,7 +39,6 @@ import {
 } from 'lucide-react-native';
 
 import type { ArchivoLocal } from './cloudinary';
-import { esPdf, miniatura } from './facturas';
 import { MESES } from './fechas';
 import { ErrorDeCampo } from './intervenciones';
 import {
@@ -59,8 +59,10 @@ import {
   isoADma,
   LARGO_AREAS,
   mascaraFecha,
+  miniaturaDocumento,
   NIVELES,
   PASOS,
+  PASOS_A_COMPLETAR,
   pasoDeCampo,
   pdfDeDocumento,
   pideTitulo,
@@ -71,6 +73,7 @@ import {
   SI_NO,
   soloCedula,
   subirDocumento,
+  tipoDeArchivo,
   TALLES,
   TIPO_VEHICULO,
   TIPOS_CUENTA,
@@ -113,6 +116,8 @@ type Props = {
   proceso: string;
   datosIniciales: Datos;
   pasoInicial: number;
+  /** Hasta qué paso se puede saltar desde la barra al abrir (por defecto, el inicial). */
+  alcanzadoInicial?: number;
   /** Ya la había enviado: el botón final dice "Guardar cambios". */
   esCorreccion: boolean;
   /** Cada cambio (para conservar lo cargado si sale de la pantalla). */
@@ -123,7 +128,7 @@ type Props = {
   onGuardada: () => void;
 };
 
-export function FormularioPostulacion({ anio, esFacilitador, proceso, datosIniciales, pasoInicial, esCorreccion, onCambio, onSalir, onEnviada, onGuardada }: Props) {
+export function FormularioPostulacion({ anio, esFacilitador, proceso, datosIniciales, pasoInicial, alcanzadoInicial, esCorreccion, onCambio, onSalir, onEnviada, onGuardada }: Props) {
   const { colors } = useTheme();
   const s = useStyles();
   const toast = useToast();
@@ -131,7 +136,7 @@ export function FormularioPostulacion({ anio, esFacilitador, proceso, datosInici
   const [d, setD] = useState<Datos>(datosIniciales);
   const [paso, setPaso] = useState(pasoInicial);
   // El paso más lejano al que llegó: se puede saltar a cualquiera hasta ahí desde la barra.
-  const [alcanzado, setAlcanzado] = useState(pasoInicial);
+  const [alcanzado, setAlcanzado] = useState(Math.max(pasoInicial, alcanzadoInicial ?? 0));
   const [errores, setErrores] = useState<Errores>({});
   const [enviando, setEnviando] = useState(false);
 
@@ -218,7 +223,7 @@ export function FormularioPostulacion({ anio, esFacilitador, proceso, datosInici
             {actual.titulo}
           </Text>
           <Text size={12} color={colors.mutedForeground}>
-            Paso {paso + 1} de {PASOS.length}
+            {ultimo ? 'Último paso' : `Paso ${paso + 1} de ${PASOS_A_COMPLETAR}`}
           </Text>
         </View>
         <Button variant="outline" size="sm" icon={Save} label="Guardar" onPress={() => void guardar(false)} disabled={enviando || noDeAcuerdo} accessibilityLabel="Guardar sin terminar" />
@@ -226,6 +231,11 @@ export function FormularioPostulacion({ anio, esFacilitador, proceso, datosInici
 
       <BarraPasos paso={paso} alcanzado={alcanzado} onIr={ir} disabled={enviando} />
 
+      {actual.id !== 'proceso' && actual.id !== 'revisar' && (
+        <Text size={12} color={colors.mutedForeground} style={{ lineHeight: 18 }}>
+          Para enviar tu postulación necesitás completar todo, salvo lo marcado como opcional. Para guardar, no hace falta.
+        </Text>
+      )}
       {actual.id === 'proceso' && <PasoProceso anio={anio} esFacilitador={esFacilitador} proceso={proceso} {...ctx} />}
       {actual.id === 'personales' && <PasoPersonales {...ctx} />}
       {actual.id === 'domicilio' && <PasoDomicilio {...ctx} />}
@@ -322,7 +332,7 @@ function BarraPasos({ paso, alcanzado, onIr, disabled }: { paso: number; alcanza
   const s = useStyles();
   return (
     <View>
-      <View style={s.barra} accessibilityRole="progressbar" accessibilityValue={{ min: 1, max: PASOS.length, now: paso + 1 }}>
+      <View style={s.barra} accessibilityRole="progressbar" accessibilityValue={{ min: 1, max: PASOS_A_COMPLETAR, now: Math.min(paso + 1, PASOS_A_COMPLETAR) }}>
         <View style={[s.barraRelleno, { width: `${((paso + 1) / PASOS.length) * 100}%` }]} />
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips} style={{ marginTop: 10 }}>
@@ -335,7 +345,7 @@ function BarraPasos({ paso, alcanzado, onIr, disabled }: { paso: number; alcanza
             <Pressable
               key={p.id}
               accessibilityRole="button"
-              accessibilityLabel={`Paso ${i + 1}: ${p.titulo}${activo ? ', actual' : ''}`}
+              accessibilityLabel={`${i === PASOS.length - 1 ? 'Último paso' : `Paso ${i + 1}`}: ${p.titulo}${activo ? ', actual' : ''}`}
               accessibilityState={{ selected: activo, disabled: !puede && !activo }}
               disabled={!puede}
               onPress={() => onIr(i)}
@@ -511,7 +521,7 @@ function PasoProceso({ anio, esFacilitador, proceso, d, set, errores, disabled }
         </Text>
         <View style={{ gap: 10 }}>
           {[
-            `Son ${PASOS.length - 1} pasos cortos. Podés ir y volver entre ellos.`,
+            `Son ${PASOS_A_COMPLETAR} pasos cortos y al final revisás y enviás. Podés ir y volver entre ellos.`,
             'Tené a mano tu cédula, los datos de tu iglesia y los de tu cuenta bancaria.',
             'Al final vas a subir, en foto o PDF: una foto carnet, tu cédula, tu CV, los certificados de no agresor y de antecedentes judiciales y policiales, y tus títulos.',
             'Podés guardarla sin terminar y seguir otro día. Una vez enviada, la podés corregir durante el año.',
@@ -976,20 +986,20 @@ function PasoIglesia(ctx: CtxPaso) {
             <CampoEscrito ctx={ctx} campo="iglesia_nombre" etiqueta="Nombre de la iglesia" maxLength={200} />
           </Col>
         </Fila>
-        <CampoOpciones ctx={ctx} campo="bautizado_agua" etiqueta="¿Estás bautizado en agua?" opciones={SI_NO} />
+        <CampoOpciones ctx={ctx} campo="bautizado_agua" etiqueta="¿Estás bautizado/a en agua?" opciones={SI_NO} />
       </Seccion>
       <Seccion titulo="Referencias">
         <Fila>
           <Col>
-            <CampoEscrito ctx={ctx} campo="pastor_nombre" etiqueta="Pastor principal" autoCapitalize="words" maxLength={200} />
+            <CampoEscrito ctx={ctx} campo="pastor_nombre" etiqueta="Pastor/a principal" autoCapitalize="words" maxLength={200} />
           </Col>
           <Col>
-            <CampoEscrito ctx={ctx} campo="pastor_telefono" etiqueta="Teléfono del pastor" keyboardType="phone-pad" maxLength={30} />
+            <CampoEscrito ctx={ctx} campo="pastor_telefono" etiqueta="Teléfono del pastor/a" keyboardType="phone-pad" maxLength={30} />
           </Col>
         </Fila>
         <Fila>
           <Col>
-            <CampoEscrito ctx={ctx} campo="lider_nombre" etiqueta="Tu líder directo" autoCapitalize="words" maxLength={200} />
+            <CampoEscrito ctx={ctx} campo="lider_nombre" etiqueta="Tu líder directo/a" autoCapitalize="words" maxLength={200} />
           </Col>
           <Col>
             <CampoEscrito ctx={ctx} campo="lider_telefono" etiqueta="Teléfono del líder" keyboardType="phone-pad" maxLength={30} />
@@ -1095,11 +1105,23 @@ function PasoDocumentos({ d, set, errores, disabled }: CtxPaso) {
   );
 }
 
+/** Miniatura del documento; si no se puede armar o no carga, un ícono de documento. */
+function MiniaturaDocumento({ url }: { url: string }) {
+  const { colors } = useTheme();
+  const [fallo, setFallo] = useState(false);
+  const src = miniaturaDocumento(url);
+  // Decorativa: el texto de la tarjeta ya dice qué tipo de archivo es.
+  if (!src || fallo) return <FileText size={22} color={colors.mutedForeground} />;
+  return <Image source={{ uri: src }} style={StyleSheet.absoluteFill} contentFit="cover" accessible={false} onError={() => setFallo(true)} />;
+}
+
 function TarjetaDocumento({ doc, url, error, disabled, onSubido }: { doc: Documento; url: string; error?: string; disabled: boolean; onSubido: (url: string) => void }) {
   const { colors } = useTheme();
   const s = useStyles();
   const [subiendo, setSubiendo] = useState(false);
   const [falla, setFalla] = useState<string | null>(null);
+  // Con el documento ya subido, las opciones de subida se muestran recién al tocar "Reemplazar".
+  const [reemplazando, setReemplazando] = useState(false);
 
   const cargar = async (elegir: () => Promise<ArchivoLocal | null>) => {
     setFalla(null);
@@ -1111,6 +1133,7 @@ function TarjetaDocumento({ doc, url, error, disabled, onSubido }: { doc: Docume
       onSubido(await subirDocumento(archivo));
       // El reemplazado se borra de Cloudinary (si una postulación guardada lo usa, al guardar).
       quitarDocumento(anterior);
+      setReemplazando(false);
     } catch (e) {
       setFalla(e instanceof Error ? e.message : 'No se pudo subir el archivo. Probá de nuevo.');
     } finally {
@@ -1120,41 +1143,36 @@ function TarjetaDocumento({ doc, url, error, disabled, onSubido }: { doc: Docume
 
   const ocupado = disabled || subiendo;
   const mensaje = falla ?? (url ? undefined : error);
+  const opcionesDeSubida = !url || reemplazando;
+  const tipo = url ? tipoDeArchivo(url) : null;
   return (
     <Card style={[{ gap: 12 }, mensaje ? { borderColor: colors.destructive } : null]}>
       <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
         <View style={s.docMiniatura}>
-          {subiendo ? (
-            <ActivityIndicator color={colors.primaryText} />
-          ) : url ? (
-            <Image source={{ uri: miniatura(url, 160) }} style={StyleSheet.absoluteFill} contentFit="cover" accessibilityLabel={doc.titulo} />
-          ) : (
-            <FileText size={22} color={colors.mutedForeground} />
-          )}
+          {subiendo ? <ActivityIndicator color={colors.primaryText} /> : url ? <MiniaturaDocumento key={url} url={url} /> : <FileText size={22} color={colors.mutedForeground} />}
         </View>
         <View style={{ flex: 1, gap: 3 }}>
           <Text weight="bold" size={14}>
             {doc.titulo}
           </Text>
           <Text size={12} color={colors.mutedForeground} style={{ lineHeight: 17 }}>
-            {subiendo ? 'Subiendo…' : url ? (esPdf(url) ? 'PDF subido.' : 'Foto subida.') : doc.ayuda}
+            {subiendo ? 'Subiendo…' : tipo ? (tipo === 'PDF' ? 'PDF subido.' : tipo === 'Foto' ? 'Foto subida.' : 'Archivo subido.') : doc.ayuda}
           </Text>
-          {url && !subiendo ? (
-            <Pressable accessibilityRole="link" accessibilityLabel={`Ver ${doc.titulo.toLowerCase()}`} onPress={() => void Linking.openURL(url)} style={s.enlace}>
-              <ExternalLink size={13} color={colors.primaryText} />
-              <Text size={12} weight="semibold" color={colors.primaryText}>
-                Ver
-              </Text>
-            </Pressable>
-          ) : null}
         </View>
         {url && !subiendo ? <CircleCheck size={20} color={colors.success} accessibilityLabel="Subido" /> : null}
       </View>
-      <View style={s.opciones}>
-        <Button size="sm" variant={url ? 'outline' : 'default'} icon={Camera} label="Sacar foto" onPress={() => void cargar(() => fotoDeDocumento('camara'))} disabled={ocupado} accessibilityLabel={`Sacar foto: ${doc.titulo}`} />
-        <Button size="sm" variant="outline" icon={ImagePlus} label="Galería" onPress={() => void cargar(() => fotoDeDocumento('galeria'))} disabled={ocupado} accessibilityLabel={`Elegir de la galería: ${doc.titulo}`} />
-        {!doc.soloFoto && <Button size="sm" variant="outline" icon={FileUp} label="PDF" onPress={() => void cargar(pdfDeDocumento)} disabled={ocupado} accessibilityLabel={`Elegir un PDF: ${doc.titulo}`} />}
-        {url ? (
+      {url && !subiendo ? (
+        <View style={s.opciones}>
+          <Button size="sm" variant="outline" icon={ExternalLink} label="Ver" onPress={() => void Linking.openURL(url)} disabled={ocupado} accessibilityLabel={`Ver ${doc.titulo.toLowerCase()}`} />
+          <Button
+            size="sm"
+            variant={reemplazando ? 'secondary' : 'outline'}
+            icon={RefreshCw}
+            label={reemplazando ? 'Cancelar' : 'Reemplazar'}
+            onPress={() => setReemplazando((v) => !v)}
+            disabled={ocupado}
+            accessibilityLabel={`${reemplazando ? 'Cancelar el reemplazo de' : 'Reemplazar'} ${doc.titulo.toLowerCase()}`}
+          />
           <Button
             size="sm"
             variant="ghost"
@@ -1163,12 +1181,20 @@ function TarjetaDocumento({ doc, url, error, disabled, onSubido }: { doc: Docume
             onPress={() => {
               onSubido('');
               quitarDocumento(url);
+              setReemplazando(false);
             }}
             disabled={ocupado}
             accessibilityLabel={`Quitar ${doc.titulo.toLowerCase()}`}
           />
-        ) : null}
-      </View>
+        </View>
+      ) : null}
+      {opcionesDeSubida ? (
+        <View style={s.opciones}>
+          <Button size="sm" variant={url ? 'outline' : 'default'} icon={Camera} label="Sacar foto" onPress={() => void cargar(() => fotoDeDocumento('camara'))} disabled={ocupado} accessibilityLabel={`Sacar foto: ${doc.titulo}`} />
+          <Button size="sm" variant="outline" icon={ImagePlus} label="Galería" onPress={() => void cargar(() => fotoDeDocumento('galeria'))} disabled={ocupado} accessibilityLabel={`Elegir de la galería: ${doc.titulo}`} />
+          {!doc.soloFoto && <Button size="sm" variant="outline" icon={FileUp} label="PDF" onPress={() => void cargar(pdfDeDocumento)} disabled={ocupado} accessibilityLabel={`Elegir un PDF: ${doc.titulo}`} />}
+        </View>
+      ) : null}
       {mensaje ? (
         <Text accessibilityRole="alert" size={12} color={colors.destructive}>
           {mensaje}
@@ -1262,9 +1288,9 @@ export function Resumen({ datos: d, lugar, onEditar }: { datos: Datos; lugar?: {
       paso: 'iglesia',
       renglones: [
         ['Iglesia', [d.iglesia_nombre, d.iglesia_denominacion].filter(Boolean).join(' · ')],
-        ['Pastor', [d.pastor_nombre, d.pastor_telefono].filter(Boolean).join(' · ')],
+        ['Pastor/a', [d.pastor_nombre, d.pastor_telefono].filter(Boolean).join(' · ')],
         ['Líder', [d.lider_nombre, d.lider_telefono].filter(Boolean).join(' · ')],
-        ['Bautizado en agua', sino(d.bautizado_agua)],
+        ['Bautizado/a en agua', sino(d.bautizado_agua)],
         ['Áreas en las que sirve', d.areas_ministerio],
       ],
     },
@@ -1282,7 +1308,7 @@ export function Resumen({ datos: d, lugar, onEditar }: { datos: Datos; lugar?: {
       paso: 'documentos',
       renglones: documentosRequeridos(d).map((doc): Renglon => {
         const url = d[doc.campo];
-        return [doc.titulo, url ? (esPdf(url) ? 'PDF' : 'Foto') : 'Falta subir', url || undefined];
+        return [doc.titulo, url ? tipoDeArchivo(url) : 'Falta subir', url || undefined];
       }),
     },
   ];

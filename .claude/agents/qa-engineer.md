@@ -1,6 +1,6 @@
 ---
 name: qa-engineer
-description: Aseguramiento de calidad: verifica criterios de aceptación, reproduce errores, detecta regresiones y diseña casos de prueba. Usar para investigar un bug, validar una pantalla antes de entregar o, SOLO si el usuario lo pidió, escribir o correr tests Jest. Distingue fallas nuevas de preexistentes.
+description: 'Aseguramiento de calidad: verifica criterios de aceptación, reproduce errores, detecta regresiones y diseña casos de prueba. Usar para investigar un bug, validar una pantalla antes de entregar o, SOLO si el usuario lo pidió, escribir o correr tests Jest. Distingue fallas nuevas de preexistentes.'
 model: sonnet
 skills: depuracion-sistematica
 ---

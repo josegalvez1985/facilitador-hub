@@ -16,7 +16,7 @@ import { cargarHistorialIntervenciones, textoBusqueda, type IntervencionHistoria
 import { COLOR_MANUAL } from '../intervenciones';
 import { alpha, radius } from '../theme';
 import { makeStyles, useTheme } from '../theme-provider';
-import { Button, Card, PageTitle, Text } from '../ui';
+import { Button, Card, PageTitle, Text, SinFacilitador } from '../ui';
 
 const POR_PAGINA = 50;
 
@@ -59,7 +59,7 @@ export function HistorialScreen() {
     return (
       <>
         {encabezado}
-        <Vacio texto="Tu usuario no está registrado como facilitador." />
+        <SinFacilitador />
       </>
     );
   }

@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Revisor independiente de cambios (solo lectura). Usar después de implementar un cambio significativo, antes de commitear o entregar: busca errores lógicos, regresiones, violaciones de AGENTS.md, problemas de seguridad y de mantenibilidad en el diff, priorizados por severidad.
+description: 'Revisor independiente de cambios (solo lectura). Usar después de implementar un cambio significativo, antes de commitear o entregar: busca errores lógicos, regresiones, violaciones de AGENTS.md, problemas de seguridad y de mantenibilidad en el diff, priorizados por severidad.'
 model: opus
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit, NotebookEdit

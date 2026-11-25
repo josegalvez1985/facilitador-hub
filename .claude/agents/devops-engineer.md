@@ -1,6 +1,6 @@
 ---
 name: devops-engineer
-description: Build y despliegue: GitHub Actions (web.yml → GitHub Pages en facilitadoresfc.online, apk.yml → APK y AAB de Google Play), EAS, app.json, variables de entorno y firma. Usar al cambiar workflows, versiones, configuración de build, al diagnosticar un build fallido o al preparar una publicación (solo con aprobación explícita).
+description: 'Build y despliegue: GitHub Actions (web.yml → GitHub Pages en facilitadoresfc.online, apk.yml → APK y AAB de Google Play), EAS, app.json, variables de entorno y firma. Usar al cambiar workflows, versiones, configuración de build, al diagnosticar un build fallido o al preparar una publicación (solo con aprobación explícita).'
 model: sonnet
 skills: preparar-publicacion
 ---

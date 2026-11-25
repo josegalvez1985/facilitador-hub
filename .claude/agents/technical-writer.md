@@ -1,6 +1,6 @@
 ---
 name: technical-writer
-description: Documentación técnica rutinaria para desarrolladores: README (tabla "Modernización"), sql/README.md, notas de versión, resúmenes de cambios y guías de instalación. Usar cuando hay que documentar algo ya verificado. El manual del usuario NO es suyo: lo hace manual-writer.
+description: 'Documentación técnica rutinaria para desarrolladores: README (tabla "Modernización"), sql/README.md, notas de versión, resúmenes de cambios y guías de instalación. Usar cuando hay que documentar algo ya verificado. El manual del usuario NO es suyo: lo hace manual-writer.'
 model: haiku
 tools: Read, Grep, Glob, Edit, Write, Bash
 ---

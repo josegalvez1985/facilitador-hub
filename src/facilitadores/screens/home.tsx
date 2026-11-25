@@ -12,7 +12,7 @@ import { useSession } from '../auth/session';
 import { ClaseCard } from '../clase-agenda';
 import { Cumpleanios } from '../cumpleanios';
 import { GraficoSemanal } from '../grafico-semanal';
-import { diaMesAbreviado, fechaCorta, hoy, mismoDia, nombreMes, sumarDias } from '../fechas';
+import { diaMesAbreviado, hoy, mismoDia, nombreMes, sumarDias } from '../fechas';
 import { fraseDelDia } from '../frase-del-dia';
 import { cargarRecientes, cargarResumen, type Resumen } from '../intervenciones';
 import { MiniCalendar } from '../mini-calendar';
@@ -30,6 +30,9 @@ export function HomeScreen() {
   const { colors } = useTheme();
   const s = useStyles();
   const { desktop, wide } = useLayout();
+  const { facilitador } = useSession();
+  // Con el facilitador ya resuelto y sin registro: Inicio muestra solo la invitación a la postulación.
+  const sinFacilitador = facilitador.estado === 'listo' && facilitador.id === null;
   // KPIs del facilitador (marcaciones, materiales e instituciones): GET mis-intervenciones/resumen.
   const resumen = useDelFacilitador(cargarResumen);
   const mes = nombreMes(hoy().getMonth()).toLowerCase();
@@ -67,14 +70,7 @@ export function HomeScreen() {
             <AvatarAureola initials={iniciales(app.name)} uri={app.foto} size={desktop ? 60 : 52} />
           </Pressable>
         }
-      >
-        {desktop && (
-          <View style={s.datePill}>
-            <CalendarDays size={15} color={colors.foreground} />
-            <Text size={12}>{fechaCorta()}</Text>
-          </View>
-        )}
-      </PageTitle>
+      />
 
       <View style={[s.hero, { minHeight: desktop ? 216 : 240 }]}>
         <Image source={classroom} style={StyleSheet.absoluteFill} contentFit="cover" contentPosition={desktop ? 'center' : { left: '62%', top: '50%' }} accessibilityLabel="Facilitadora acompañando a estudiantes en el aula" />
@@ -98,9 +94,13 @@ export function HomeScreen() {
             “{frase}”
           </Text>
           <Text size={desktop ? 12 : 11} color={colors.mutedForeground} style={{ lineHeight: 20, marginTop: 9, marginBottom: 16, maxWidth: desktop ? 265 : 200 }}>
-            Todo listo para tus clases de hoy. Sigamos construyendo el futuro, juntos.
+            {sinFacilitador ? 'Completá o revisá tu postulación para sumarte como facilitador/a.' : 'Todo listo para tus clases de hoy. Sigamos construyendo el futuro, juntos.'}
           </Text>
-          <Button size="sm" label="Ver mi agenda" iconRight={ArrowRight} onPress={() => router.navigate('/horarios')} style={{ alignSelf: 'flex-start' }} />
+          {sinFacilitador ? (
+            <Button size="sm" label="Ir a Mi postulación" iconRight={ArrowRight} onPress={() => router.navigate('/postulacion')} style={{ alignSelf: 'flex-start' }} />
+          ) : (
+            <Button size="sm" label="Ver mi agenda" iconRight={ArrowRight} onPress={() => router.navigate('/horarios')} style={{ alignSelf: 'flex-start' }} />
+          )}
         </View>
       </View>
 
@@ -111,8 +111,9 @@ export function HomeScreen() {
       <Cumpleanios />
 
       {/* Intervenciones por semana (Total / Sí / No por día), encima de los KPIs. */}
-      <GraficoSemanal />
+      {!sinFacilitador && <GraficoSemanal />}
 
+      {!sinFacilitador && (
       <View style={[s.stats, { gap: desktop ? (wide ? 16 : 10) : 12 }]}>
         {stats.map((st) => (
           <Card key={st.label} style={[s.stat, { flexBasis: desktop ? '22%' : '45%' }]}>
@@ -131,7 +132,9 @@ export function HomeScreen() {
           </Card>
         ))}
       </View>
+      )}
 
+      {!sinFacilitador && (
       <View style={[s.columns, desktop && { flexDirection: 'row', gap: wide ? 28 : 20 }]}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <SectionHeading title={<><Text weight="bold" size={16}>Tus clases de hoy</Text>{agenda.tipo === 'listo' && <Badge label={`${clasesHoy.length} ${clasesHoy.length === 1 ? 'clase' : 'clases'}`} />}</>}>
@@ -193,6 +196,7 @@ export function HomeScreen() {
           </View>
         )}
       </View>
+      )}
     </>
   );
 }
@@ -298,7 +302,6 @@ function QuickLink({ href, icon, tone, title, detail }: { href: Href; icon: Luci
 
 const useStyles = makeStyles((c) =>
   StyleSheet.create({
-    datePill: { flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: radius.md },
     hero: { position: 'relative', overflow: 'hidden', borderRadius: radius.lg, backgroundColor: c.secondary, marginBottom: 24 },
     eyebrow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 12 },
     stats: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 30 },

@@ -1,6 +1,6 @@
 ---
 name: security-engineer
-description: Auditoría defensiva de seguridad (solo lectura): sesión y tokens, aislamiento entre facilitadores, exposición de datos en endpoints ORDS, PL/SQL dinámico, subida a Cloudinary, almacenamiento en el dispositivo, secretos y dependencias. Usar ante cambios en auth, sesión, endpoints nuevos, datos personales o bancarios, o antes de una entrega sensible.
+description: 'Auditoría defensiva de seguridad (solo lectura): sesión y tokens, aislamiento entre facilitadores, exposición de datos en endpoints ORDS, PL/SQL dinámico, subida a Cloudinary, almacenamiento en el dispositivo, secretos y dependencias. Usar ante cambios en auth, sesión, endpoints nuevos, datos personales o bancarios, o antes de una entrega sensible.'
 model: opus
 tools: Read, Grep, Glob, Bash, WebFetch
 disallowedTools: Write, Edit, NotebookEdit

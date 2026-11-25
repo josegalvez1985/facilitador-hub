@@ -5,8 +5,8 @@ import { usePathname, useRouter, type Href } from 'expo-router';
 import { Bell, BookOpen, CalendarDays, ChevronRight, CircleHelp, ClipboardCheck, ClipboardPen, FileText, History, LayoutGrid, ListChecks, LogOut, MapPin, Menu, Plus, Receipt, UserRound, X, type LucideIcon } from 'lucide-react-native';
 
 import { useSession } from './auth/session';
-import { demoUser, iniciales } from './data';
-import { fechaLarga } from './fechas';
+import { iniciales } from './data';
+import { fechaLarga, hoy } from './fechas';
 import { MarkModal } from './mark-modal';
 import { useApp } from './provider';
 import { claveDeAviso, TarjetaAviso, useAvisoPostulacion } from './aviso-postulacion';
@@ -34,6 +34,13 @@ export const nav: NavItem[] = [
 /** Secciones con botón propio en la barra inferior del celular. Todas las de `nav` están además en Menú. */
 const barraInferior = ['/', '/marcar', '/perfil'];
 
+/** Rol real y neutro: facilitador registrado o postulante (sin registro de facilitador). */
+export function useRol() {
+  const { facilitador } = useSession();
+  if (facilitador.estado !== 'listo') return 'Usuario';
+  return facilitador.id === null ? 'Postulante' : 'Facilitador/a';
+}
+
 export function useLayout() {
   const { width } = useWindowDimensions();
   return { width, desktop: width >= breakpoints.desktop, wide: width >= breakpoints.wide };
@@ -52,6 +59,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { colors } = useTheme();
   const s = useStyles();
   const insets = useSafeAreaInsets();
+  const rol = useRol();
   const { desktop, wide } = useLayout();
   const [notifications, setNotifications] = useState(false);
   const [help, setHelp] = useState(false);
@@ -62,7 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const enMenu = !barraInferior.includes(path);
 
   useEffect(() => {
-    if (Platform.OS === 'web') document.title = `${title} · Facilitadores`;
+    if (Platform.OS === 'web') document.title = `${title} · facilitadores`;
   }, [title]);
 
   // Campana: el punto marca una próxima clase que todavía no se vio; al abrir el panel queda vista
@@ -92,7 +100,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <View style={[s.root, desktop && { flexDirection: 'row' }]}>
       {desktop && (
         <View style={[s.sidebar, { width: wide ? 242 : 205, paddingHorizontal: wide ? 22 : 15 }]}>
-          <Pressable onPress={() => go('/')} accessibilityRole="link" accessibilityLabel="Facilitadores, inicio">
+          <Pressable onPress={() => go('/')} accessibilityRole="link" accessibilityLabel="facilitadores, inicio">
             <Brand size={wide ? 22 : 19} />
           </Pressable>
           <Text weight="bold" size={10} color={colors.mutedForeground} style={s.navLabel}>
@@ -125,7 +133,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {app.name}
                 </Text>
                 <Text size={10} color={colors.mutedForeground} style={{ marginTop: 3 }}>
-                  {demoUser.role}
+                  {rol}
                 </Text>
               </View>
               <Button variant="ghost" size="icon" icon={LogOut} accessibilityLabel="Cerrar sesión" onPress={logout} />
@@ -141,7 +149,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               {title}
             </Text>
           ) : (
-            <Pressable onPress={() => go('/')} accessibilityRole="link" accessibilityLabel="Facilitadores, inicio">
+            <Pressable onPress={() => go('/')} accessibilityRole="link" accessibilityLabel="facilitadores, inicio">
               <Brand size={20} />
             </Pressable>
           )}
@@ -170,7 +178,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {desktop && (
             <View style={s.footer}>
               <Text size={10} color={colors.mutedForeground}>
-                © {new Date().getFullYear()} Facilitadores
+                © {hoy().getFullYear()} facilitadores
               </Text>
               <Text size={10} color={colors.mutedForeground}>
                 Hecho para quienes transforman la educación.
@@ -234,7 +242,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         />
       )}
       <Modal visible={salir} onClose={() => setSalir(false)} title="¿Cerrar sesión?" closeLabel="Cancelar">
-        <ModalText>Vas a salir de Facilitadores. Para volver a entrar necesitás tu usuario y contraseña.</ModalText>
+        <ModalText>Vas a salir de facilitadores. Para volver a entrar necesitás tu usuario y contraseña.</ModalText>
         <ModalActions>
           <Button variant="outline" label="Cancelar" onPress={() => setSalir(false)} />
           <Button
@@ -285,6 +293,7 @@ function MenuSheet({ visible, path, onClose, onNavigate, onHelp }: { visible: bo
   const { colors } = useTheme();
   const s = useStyles();
   const app = useApp();
+  const rol = useRol();
   const insets = useSafeAreaInsets();
   return (
     <RNModal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -299,7 +308,7 @@ function MenuSheet({ visible, path, onClose, onNavigate, onHelp }: { visible: bo
                 {app.name}
               </Text>
               <Text size={11} color={colors.mutedForeground}>
-                {demoUser.role}
+                {rol}
               </Text>
             </View>
             <Button variant="ghost" size="icon" icon={X} accessibilityLabel="Cerrar menú" onPress={onClose} />
@@ -352,8 +361,8 @@ const useStyles = makeStyles((c) =>
     topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: c.card, borderBottomWidth: 1, borderBottomColor: c.border },
     topbarRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     bellDot: { position: 'absolute', top: 9, right: 10 },
-    workspace: { width: '100%', maxWidth: 1460, alignSelf: 'center' },
-    footer: { marginTop: 32, flexDirection: 'row', justifyContent: 'space-between' },
+    workspace: { width: '100%', maxWidth: 1460, alignSelf: 'center', flexGrow: 1 },
+    footer: { marginTop: 'auto', paddingTop: 32, flexDirection: 'row', justifyContent: 'space-between' },
     notificationPanel: { position: 'absolute', width: 280, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, padding: 20, borderRadius: radius.lg, zIndex: 40, elevation: 6, ...c.shadow },
     bottomNav: { flexDirection: 'row', backgroundColor: c.card, borderTopWidth: 1, borderTopColor: c.border, paddingTop: 10, paddingHorizontal: 9 },
     bottomItem: { flex: 1, alignItems: 'center', gap: 5, paddingVertical: 4 },

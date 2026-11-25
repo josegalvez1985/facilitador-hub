@@ -4,7 +4,7 @@
 // - Semana completa: todas las filas del reporte APEX, en su mismo orden.
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { CalendarDays, RefreshCw } from 'lucide-react-native';
 
 import { cargarAgenda, clasesDelDia, diaAgenda, type Agenda } from '../agenda';
@@ -14,7 +14,7 @@ import { LineaDeTiempo } from '../linea-tiempo';
 import { diaYMes, hoy, semanaDe } from '../fechas';
 import { radius } from '../theme';
 import { makeStyles, useTheme } from '../theme-provider';
-import { Button, Card, PageTitle, SectionHeading, Text } from '../ui';
+import { Button, Card, PageTitle, SectionHeading, SinFacilitador, Text } from '../ui';
 
 type Estado = { tipo: 'cargando' } | { tipo: 'error'; mensaje: string } | { tipo: 'listo'; agenda: Agenda };
 type Resultado = { clave: string } & Exclude<Estado, { tipo: 'cargando' }>;
@@ -55,7 +55,7 @@ export function ScheduleScreen() {
 
   let contenido: ReactNode;
   if (facilitador.estado === 'listo' && facilitador.id === null) {
-    contenido = <Vacio texto="Tu usuario no está registrado como facilitador." />;
+    contenido = <SinFacilitador />;
   } else if (facilitador.estado === 'error' || estado.tipo === 'error') {
     const mensaje = facilitador.estado === 'error' ? facilitador.mensaje : estado.tipo === 'error' ? estado.mensaje : '';
     contenido = (
@@ -109,10 +109,13 @@ export function ScheduleScreen() {
     );
   }
 
+  const sinFacilitador = facilitador.estado === 'listo' && facilitador.id === null;
+
   return (
     <>
       <PageTitle title="Mi agenda" subtitle="Tu semana, organizada para enseñar." />
 
+      {!sinFacilitador && (
       <View style={s.segmento} accessibilityRole="tablist">
         {(
           [
@@ -128,9 +131,10 @@ export function ScheduleScreen() {
           </Pressable>
         ))}
       </View>
+      )}
 
-      {vista !== 'semana' && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.days} style={{ marginBottom: 22, flexGrow: 0 }}>
+      {vista !== 'semana' && !sinFacilitador && (
+        <View style={s.days}>
           {semana.map((d) => {
             const active = day === d.clave;
             const n = cuantas(d.fecha);
@@ -157,7 +161,7 @@ export function ScheduleScreen() {
               </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
       )}
 
       {contenido}
@@ -180,14 +184,15 @@ function Vacio({ texto }: { texto: string }) {
 
 const useStyles = makeStyles((colors) =>
   StyleSheet.create({
-    days: { gap: 9 },
+    days: { flexDirection: 'row', gap: 6, marginBottom: 22 },
     day: {
       alignItems: 'center',
       justifyContent: 'center',
+      flex: 1,
       gap: 2,
       height: 66,
-      minWidth: 48,
-      paddingHorizontal: 12,
+      minWidth: 0,
+      paddingHorizontal: 2,
       borderRadius: radius.md,
       borderWidth: 1,
       borderColor: colors.border,

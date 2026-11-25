@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { Image } from 'expo-image';
-import { CircleCheck, Clock, ExternalLink, Pencil, Plus, Receipt, RefreshCw, Trash2, UserRound } from 'lucide-react-native';
+import { CircleCheck, Clock, ExternalLink, Pencil, Plus, Receipt, RefreshCw, Trash2 } from 'lucide-react-native';
 
 import { useSession } from '../auth/session';
 import { EditarFactura } from '../editar-factura';
@@ -18,7 +18,7 @@ import { MESES, nombreMes } from '../fechas';
 import { radius } from '../theme';
 import { makeStyles, useTheme } from '../theme-provider';
 import { useToast } from '../toast';
-import { Badge, Button, Card, Modal, ModalActions, ModalText, PageTitle, Text } from '../ui';
+import { Badge, Button, Card, Modal, ModalActions, ModalText, PageTitle, Text, SinFacilitador } from '../ui';
 
 type Resultado = { clave: string } & ({ tipo: 'error'; mensaje: string } | ({ tipo: 'listo' } & ListaFacturas));
 /** Lo que se ve: la lista, o el formulario de una factura nueva (null) o de una a corregir. */
@@ -27,7 +27,7 @@ type Vista = { tipo: 'lista' } | { tipo: 'form'; factura: Factura | null };
 export function FacturasScreen() {
   const { colors } = useTheme();
   const toast = useToast();
-  const { sesion, facilitador, reintentarFacilitador } = useSession();
+  const { facilitador, reintentarFacilitador } = useSession();
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [intento, setIntento] = useState(0);
   const [vista, setVista] = useState<Vista>({ tipo: 'lista' });
@@ -111,12 +111,7 @@ export function FacturasScreen() {
     return (
       <>
         {encabezado}
-        <View style={{ paddingVertical: 56, alignItems: 'center', gap: 16 }}>
-          <UserRound size={24} color={colors.mutedForeground} />
-          <Text color={colors.mutedForeground} style={{ textAlign: 'center', lineHeight: 21 }}>
-            Tu usuario {sesion?.usuario ? `(${sesion.usuario}) ` : ''}no está registrado como facilitador.{'\n'}No hay facturas para mostrar.
-          </Text>
-        </View>
+        <SinFacilitador />
       </>
     );
   }

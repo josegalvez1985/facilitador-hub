@@ -18,7 +18,7 @@ import * as Location from 'expo-location';
 
 import { authFetch, ErrorApi } from './auth/api';
 import { subirACloudinary, type ArchivoLocal } from './cloudinary';
-import { tomarFoto } from './facturas';
+import { esPdf, miniatura, tomarFoto } from './facturas';
 import { hoy } from './fechas';
 import { ErrorDeCampo } from './intervenciones';
 
@@ -674,7 +674,57 @@ export function textoPeriodo(e: Pick<EstadoPostulacion, 'abierta' | 'periodo'>):
   return `El período de postulación cerró el ${isoADma(p.fin)}.`;
 }
 
-export const FALTA_PUBLICAR = 'Falta publicar en el backend los endpoints de mi-postulacion (sql/postulacion_app_ethos.sql).';
+/** Hasta cuántos días antes del cierre se destaca el plazo. */
+const DIAS_AVISO_CIERRE = 7;
+
+/**
+ * "Cierra hoy" / "Cierra mañana" / "Cierra en 3 días" cuando el período está abierto y falta poco
+ * (hasta 7 días); si no, null. Compara con la fecha del dispositivo (fechas.ts).
+ */
+export function textoCierre(e: Pick<EstadoPostulacion, 'abierta' | 'periodo'>): string | null {
+  const p = e.periodo;
+  if (!e.abierta || !p) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(p.fin);
+  if (!m) return null;
+  const h = hoy();
+  const dias = Math.round((Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) - Date.UTC(h.getFullYear(), h.getMonth(), h.getDate())) / 86_400_000);
+  if (dias < 0 || dias > DIAS_AVISO_CIERRE) return null;
+  return dias === 0 ? 'Cierra hoy' : dias === 1 ? 'Cierra mañana' : `Cierra en ${dias} días`;
+}
+
+/** Cuántos pasos hay que completar (todos menos el último, "Revisar y enviar"). */
+export const PASOS_A_COMPLETAR = PASOS.length - 1;
+
+/**
+ * Cuántos de esos pasos ya están completos: los de datos sin faltantes y, en "Documentos", sin
+ * archivos pendientes.
+ */
+export function pasosCompletos(f: { pasos: PasoFaltante[]; archivos: string[] }): number {
+  const pendientes = f.pasos.length + (f.archivos.length > 0 ? 1 : 0);
+  return Math.max(0, PASOS_A_COMPLETAR - pendientes);
+}
+
+/** El paso donde retomar: el primero con datos o archivos faltantes; si no falta nada, "Revisar y enviar". */
+export function pasoParaRetomar(d: Datos): number {
+  const f = faltantes(d);
+  const iDocs = PASOS.findIndex((p) => p.id === 'documentos');
+  const candidatos = [...f.pasos.map((p) => p.paso), ...(f.archivos.length ? [iDocs] : [])];
+  return candidatos.length ? Math.min(...candidatos) : PASOS.length - 1;
+}
+
+/** Miniatura de un documento subido, o null si no se puede armar (un archivo "raw" no admite transformaciones). */
+export function miniaturaDocumento(url: string): string | null {
+  if (!url || url.includes('/raw/upload/')) return null;
+  return miniatura(url, 160);
+}
+
+/** "PDF", "Foto" o "Archivo" (un enlace sin extensión de imagen ni PDF, p. ej. un "raw" de Cloudinary). */
+export function tipoDeArchivo(url: string): 'PDF' | 'Foto' | 'Archivo' {
+  if (esPdf(url)) return 'PDF';
+  return url.includes('/raw/upload/') ? 'Archivo' : 'Foto';
+}
+
+export const FALTA_PUBLICAR ='Falta publicar en el backend los endpoints de mi-postulacion (sql/postulacion_app_ethos.sql).';
 /** Un endpoint sin publicar: ORDS responde "Not Found". */
 export const faltaPublicar = (mensaje: string) => /not found/i.test(mensaje);
 

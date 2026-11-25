@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { Download, Eye, FileText, ImageDown, RefreshCw, TriangleAlert, UserRound, ZoomIn, ZoomOut } from 'lucide-react-native';
+import { Download, Eye, FileText, ImageDown, RefreshCw, TriangleAlert, ZoomIn, ZoomOut } from 'lucide-react-native';
 
 import { useSession } from '../auth/session';
 import { hoy, nombreMes } from '../fechas';
@@ -16,7 +16,7 @@ import { Cancelado, cargarImagenesAcuerdo, cargarLogo, descargarPdf, sacarImagen
 import { LaminaSvg } from '../formularios/vista';
 import { makeStyles, useTheme } from '../theme-provider';
 import { useToast } from '../toast';
-import { Button, Card, PageTitle, Text } from '../ui';
+import { Button, Card, PageTitle, Text, SinFacilitador } from '../ui';
 
 /** 4 = el Acuerdo de cooperación (solo PDF). */
 type NroForm = 1 | 2 | 3 | 4;
@@ -202,12 +202,7 @@ export function FormulariosScreen() {
     return (
       <>
         {encabezado}
-        <View style={s.centro}>
-          <UserRound size={24} color={colors.mutedForeground} />
-          <Text color={colors.mutedForeground} style={{ textAlign: 'center', lineHeight: 21 }}>
-            Tu usuario {sesion?.usuario ? `(${sesion.usuario}) ` : ''}no está registrado como facilitador.{'\n'}No hay formularios para mostrar.
-          </Text>
-        </View>
+        <SinFacilitador />
       </>
     );
   }

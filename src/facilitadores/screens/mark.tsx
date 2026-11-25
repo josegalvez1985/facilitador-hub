@@ -34,7 +34,8 @@ import { radius } from '../theme';
 import { makeStyles, useTheme } from '../theme-provider';
 import { useToast } from '../toast';
 import { useUbicacion } from '../ubicacion';
-import { Button, Card, Modal, ModalActions, ModalText, PageTitle, Text } from '../ui';
+import { useSession } from '../auth/session';
+import { Button, Card, Modal, ModalActions, ModalText, PageTitle, SinFacilitador, Text } from '../ui';
 
 const VACIO: Formulario = {
   id_institucion: null,
@@ -60,6 +61,9 @@ export function MarkScreen() {
   const s = useStyles();
   const router = useRouter();
   const toast = useToast();
+  const { facilitador, reintentarFacilitador } = useSession();
+  // Sin ID_FACILITADOR resuelto y no nulo no se pide nada (aislamiento entre facilitadores).
+  const idFacilitador = facilitador.estado === 'listo' ? facilitador.id : null;
   const [inicio, setInicio] = useState<EstadoInicio>({ tipo: 'cargando' });
   const [intentoInicio, setIntentoInicio] = useState(0);
   const [form, setForm] = useState<Formulario>(VACIO);
@@ -146,8 +150,28 @@ export function MarkScreen() {
       .finally(() => tk === pedido.current.horarios && setCargando((c) => ({ ...c, horarios: false })));
   };
 
+  // Si otra pestaña adopta un login nuevo, no queda nada del facilitador anterior a la vista.
+  const idPrevio = useRef(idFacilitador);
+  useEffect(() => {
+    if (idPrevio.current === idFacilitador) return;
+    idPrevio.current = idFacilitador;
+    pedido.current.horarios++;
+    pedido.current.clase++;
+    pedido.current.indices++;
+    setInicio({ tipo: 'cargando' });
+    setForm(VACIO);
+    setHorarios(null);
+    setClase(null);
+    setIndices(null);
+    setCargando({ horarios: false, clase: false, indices: false });
+    setErrorCarga(null);
+    setErrores({});
+    setConfirmar(false);
+  }, [idFacilitador]);
+
   // Carga inicial: LOV de instituciones + su valor por defecto (si está en la lista).
   useEffect(() => {
+    if (idFacilitador === null) return;
     let vigente = true;
     cargarInicio()
       .then((datos) => {
@@ -162,7 +186,7 @@ export function MarkScreen() {
     };
     // elegirInstitucion se recrea en cada render; la carga inicial depende solo del intento.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intentoInicio]);
+  }, [intentoInicio, idFacilitador]);
 
   const actualizar = (cambio: Partial<Formulario>) => {
     setForm((f) => ({ ...f, ...cambio }));
@@ -218,7 +242,28 @@ export function MarkScreen() {
 
   const encabezado = <PageTitle title="Registrar intervención" subtitle="Marcá tu clase de hoy en pocos pasos." />;
 
-  if (inicio.tipo === 'cargando') {
+  if (facilitador.estado === 'listo' && facilitador.id === null) {
+    return (
+      <>
+        {encabezado}
+        <SinFacilitador />
+      </>
+    );
+  }
+  if (facilitador.estado === 'error') {
+    return (
+      <>
+        {encabezado}
+        <Card style={{ alignItems: 'center', gap: 12, paddingVertical: 28 }}>
+          <Text accessibilityRole="alert" color={colors.destructive} style={{ textAlign: 'center' }}>
+            {facilitador.mensaje}
+          </Text>
+          <Button variant="outline" icon={RefreshCw} label="Reintentar" onPress={reintentarFacilitador} />
+        </Card>
+      </>
+    );
+  }
+  if (inicio.tipo === 'cargando' || facilitador.estado === 'cargando') {
     return (
       <>
         {encabezado}
@@ -229,7 +274,7 @@ export function MarkScreen() {
       </>
     );
   }
-  if (inicio.tipo === 'error') {
+  if (inicio.tipo !== 'listo') {
     return (
       <>
         {encabezado}
@@ -249,11 +294,7 @@ export function MarkScreen() {
     return (
       <>
         {encabezado}
-        <View style={s.centro}>
-          <Text color={colors.mutedForeground} style={{ textAlign: 'center' }}>
-            Tu usuario no está registrado como facilitador.{'\n'}No podés registrar intervenciones.
-          </Text>
-        </View>
+        <SinFacilitador />
       </>
     );
   }
@@ -417,8 +458,8 @@ export function MarkScreen() {
       )}
       <Button icon={Save} size="lg" label={guardando ? 'Guardando…' : 'Guardar intervención'} onPress={pedirConfirmacion} disabled={guardando} />
 
-      <Modal visible={confirmar} onClose={() => setConfirmar(false)} title="¿Guardar intervención?" closeLabel="Cancelar">
-        <ModalText>¿Está seguro que desea guardar esta intervención?</ModalText>
+      <Modal visible={confirmar} onClose={() => setConfirmar(false)} title="¿Guardamos esta intervención?" closeLabel="Cancelar">
+        <ModalText>Revisá los datos antes de guardar.</ModalText>
         <View style={s.resumen}>
           {resumen.map(([k, v]) => (
             <View key={k} style={s.resumenFila}>

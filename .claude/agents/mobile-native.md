@@ -1,6 +1,6 @@
 ---
 name: mobile-native
-description: Especialista en lo que solo pasa en el APK de Android: módulos nativos de Expo, WebView, edge-to-edge y teclado, Hermes, rendimiento en el hilo principal ("no responde"), permisos (cámara, ubicación, biometría), User-Agent/okhttp y diferencias entre APK y PWA. Usar cuando algo funciona en la web y falla, se congela o se ve distinto en Android, o al agregar un módulo nativo.
+description: 'Especialista en lo que solo pasa en el APK de Android: módulos nativos de Expo, WebView, edge-to-edge y teclado, Hermes, rendimiento en el hilo principal ("no responde"), permisos (cámara, ubicación, biometría), User-Agent/okhttp y diferencias entre APK y PWA. Usar cuando algo funciona en la web y falla, se congela o se ve distinto en Android, o al agregar un módulo nativo.'
 model: sonnet
 skills: pantalla-expo, depuracion-sistematica
 ---

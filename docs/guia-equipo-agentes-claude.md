@@ -58,6 +58,7 @@ Nada de esto toca código, dependencias, base de datos ni infraestructura: son s
 9. **Separar documentación técnica del manual del usuario final**: `technical-writer` (haiku) para README y contratos; `manual-writer` (sonnet) para el manual en lenguaje de usuario, porque el tono importa.
 10. **Evitar que las reglas se desincronicen.** Como los agentes y skills repiten reglas del proyecto, el archivo de reglas (`AGENTS.md` o `CLAUDE.md`) lleva una regla que obliga a actualizar los agentes y skills que mencionan una regla cuando esa regla cambia, y dice que el archivo de reglas prevalece si no coinciden.
 11. **Documentarlo para las personas, no solo para Claude.** El README del proyecto explica qué agentes y skills hay, cómo pedirlos y qué reglas respetan; así cualquiera del equipo sabe qué esperar.
+12. **Controlar el consumo.** Los tokens de los subagentes también cuentan. `CLAUDE.md` lleva una sección "Política de optimización de consumo": ejecución directa para lo simple, delegar solo cuando aporta valor, sin agentes duplicados ni análisis repetidos, modelos económicos para lo rutinario y `opus` para decisiones complejas, contexto mínimo en cada pedido y resultados resumidos (nunca copiar los archivos analizados).
 
 ---
 
@@ -68,7 +69,7 @@ Nada de esto toca código, dependencias, base de datos ni infraestructura: son s
 ```markdown
 ---
 name: <nombre>                 # igual al nombre del archivo, kebab-case
-description: <qué hace>. Usar cuando <situaciones concretas>.
+description: '<qué hace>. Usar cuando <situaciones concretas>.'   # SIEMPRE entre comillas simples
 model: opus | sonnet | haiku | fable
 tools: Read, Grep, Glob        # opcional: lista blanca. Sin esta línea = todas las herramientas
 disallowedTools: Write, Edit, NotebookEdit   # opcional: lista negra
@@ -77,6 +78,8 @@ skills: skill-a, skill-b       # opcional: skills que se cargan al iniciar el ag
 
 <instrucciones del agente: rol, antes de empezar, reglas, entregable, límites>
 ```
+
+> **Encabezado YAML (25/11/2026):** una `description` sin comillas que contiene `: ` (dos puntos y espacio, por ejemplo "Build y despliegue: GitHub…") es YAML inválido. Claude Code **descarta el agente sin avisar** y la sesión dice "Agent type not found". Le pasó a 6 de los 13 agentes de este proyecto. Escribir la descripción siempre entre comillas simples (sin apóstrofos adentro) y, después de crear o editar agentes, validar el encabezado; por ejemplo, con `js-yaml`, que viene con Expo: `node -e "const y=require('js-yaml'),fs=require('fs');for(const f of fs.readdirSync('.claude/agents')){try{y.load(fs.readFileSync('.claude/agents/'+f,'utf8').split(/^---$/m)[1]);console.log('OK',f)}catch(e){console.log('ERROR',f,e.reason)}}"`. Los agentes corregidos se cargan al reiniciar la sesión.
 
 ### Skill: `.claude/skills/<nombre>/SKILL.md`
 

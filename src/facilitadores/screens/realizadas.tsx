@@ -27,7 +27,7 @@ import {
 import { useLayout } from '../shell';
 import { alpha, radius } from '../theme';
 import { makeStyles, useTheme } from '../theme-provider';
-import { Badge, Button, Card, Field, PageTitle, SectionHeading, Text } from '../ui';
+import { Badge, Button, Card, Field, PageTitle, SectionHeading, Text, SinFacilitador } from '../ui';
 
 const POR_PAGINA = 15; // como el reporte de la página 6
 const FALTA_PUBLICAR = 'Falta publicar en el backend los endpoints de intervenciones-realizadas (sql/intervenciones_realizadas_app_ethos.sql).';
@@ -86,7 +86,7 @@ export function RealizadasScreen() {
     return (
       <>
         {encabezado}
-        <Vacio texto="Tu usuario no está registrado como facilitador." />
+        <SinFacilitador />
       </>
     );
   }
