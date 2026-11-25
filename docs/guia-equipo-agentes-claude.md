@@ -498,7 +498,15 @@ Además: `/code-review`, `/security-review`, `/simplify`, `skill-creator`.
 - Análisis independientes en paralelo; dos agentes nunca editan los mismos archivos a la vez.
 - En tareas dependientes, esperar el resultado anterior.
 - Desacuerdo técnico: alternativas, impacto y recomendación.
-- Los subagentes consumen el límite de uso: no delegar lo que se resuelve en pocos pasos.
+
+## Política de optimización de consumo
+- Ejecución directa primero: lo simple o mecánico lo resuelve la sesión principal.
+- Delegar solo cuando aporta valor: especialización, contexto independiente o paralelo justificado.
+- Sin agentes duplicados ni análisis repetidos: lo ya analizado se reutiliza.
+- Modelo según la tarea: haiku/sonnet para lo rutinario; opus para decisiones complejas y auditorías.
+- Contexto mínimo: el pedido al subagente nombra archivos y lo ya sabido; no cargar skills innecesarios.
+- Resultados resumidos: hallazgos, cambios y pendientes; nunca copiar los archivos analizados.
+- Para corregir lo que encontró una revisión, retomar al mismo agente (SendMessage) en vez de lanzar uno nuevo.
 
 ## Protocolo
 1. Descubrimiento: `git status`, leer documentación y código afectados, separar hechos de supuestos.
